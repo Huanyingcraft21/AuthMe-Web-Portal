@@ -1,6 +1,7 @@
+<div id="cn"></div>
 # AuthMe账号管理面板 / AuthMe Web Portal
 
-[English](#english-readme) | [中文说明](#中文说明)
+[English](#en) | [中文说明](#cn)
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg) ![PHP](https://img.shields.io/badge/php-7.4%2B-purple.svg) ![Version](https://img.shields.io/badge/version-v1.5-green.svg)
 
@@ -80,4 +81,71 @@ DataSource:
   
 security:
   # 必须与网页端加密方式一致
+  passwordHash: 'SHA256'
+
+
+<div id="en"></div>
+
+## 📖 English Description
+
+**MeteorMCS Account Manager** is a lightweight, secure Web User Center designed for Minecraft servers. It allows players to register accounts via a web interface, reset passwords via email, and provides a powerful admin dashboard for server owners.
+
+This project is built to integrate seamlessly with the [AuthMeReloaded](https://github.com/AuthMe/AuthMeReloaded) plugin using MySQL.
+
+### ✨ Features
+
+* **Two Editions**: Available in **Standard (v1.5)** and **Lite (v0.150)** to suit different needs.
+* **User Registration**: Modern UI with built-in Captcha protection.
+* **Password Reset**: Integrated lightweight SMTP client for sending verification codes via email.
+* **Admin Dashboard**:
+    * Visual configuration for Database, SMTP, and Admin credentials.
+    * Manage and search registered players.
+    * One-click email configuration testing.
+* **Security**:
+    * **Brute-force Protection**: IP is locked for 1 hour after 3 failed login attempts.
+    * **Install Lock**: The installer is automatically disabled after configuration is generated.
+* **Zero Dependencies**: No Composer required, no complex frameworks. Just upload and run.
+
+### 📦 Editions
+
+| Feature | Standard Edition (v1.5) | Lite Edition (v0.150) |
+| :--- | :--- | :--- |
+| **Structure** | Separated Files (`index.php`, `admin.php`, `install.php`) | Single File (`index.php`) |
+| **Security** | ⭐⭐⭐⭐⭐ (Admin URL can be hidden/renamed) | ⭐⭐⭐ (Fixed URL) |
+| **Maintainability** | High (Clear logic separation) | Medium (Portable focused) |
+| **Best For** | Production Servers, Long-term use | Test Servers, Private SMPs |
+
+### 🚀 Quick Start
+
+#### Prerequisites
+* PHP 7.4 or higher
+* MySQL / MariaDB
+* Web Server (Nginx/Apache/IIS)
+* Minecraft Server with AuthMeReloaded plugin installed
+
+#### 🛠️ Installation
+
+**Option A: Standard Edition (Recommended)**
+1.  Download files from the `Standard` folder.
+2.  Upload `index.php`, `install.php`, and `admin.php` to your web root.
+3.  Navigate to `http://yourdomain.com/install.php` to run the setup wizard.
+4.  **Security Tip**: After installation, DELETE `install.php` and RENAME `admin.php` to something secret (e.g., `super_admin.php`) to hide your dashboard.
+
+**Option B: Lite Edition**
+1.  Download the file from the `Lite` folder.
+2.  Upload `index.php` to your web root.
+3.  Navigate to `http://yourdomain.com/index.php`. It will automatically redirect you to the installation setup.
+
+### 🔌 AuthMe Configuration
+
+To ensure web-registered accounts work in-game, verify your `plugins/AuthMe/config.yml` settings:
+
+```yaml
+DataSource:
+  backend: 'MYSQL'
+  mySQLHost: '127.0.0.1' # Database Host
+  # ... enter your credentials
+  
+security:
+  # MUST match the web system's hashing algorithm
   passwordHash: 'SHA256'
