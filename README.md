@@ -85,6 +85,29 @@ security:
 
 ```
 
+修改完成后，在控制台输入 `/authme reload` 重载配置。
+
+---
+
+## 🛡️ 安全机制说明
+
+为了保护服务器安全，本程序内置了以下防御机制：
+
+1.  **后台防爆破 (Anti-Brute Force)：**
+    * 后台登录接口会实时监测 **IP 行为**。
+    * 如果同一个 IP 在 1 小时内连续输错 3 次密码，系统将**自动锁定该 IP**，期间无法访问后台。
+    * **解锁方法：** 如果你是管理员且不小心被锁，请通过 FTP 或宝塔面板的文件管理器，删除网站根目录下的 `login_limit.json` 文件，即可立即解除锁定。
+
+2.  **安装程序自锁：**
+    * `install.php` 在检测到配置文件 `config.php` 存在时，会**自动拒绝运行**，防止被他人恶意重置。
+
+---
+
+## 📄 开源协议
+
+本项目遵循 [MIT License](https://opensource.org/licenses/MIT) 协议。  
+你可以自由地使用、修改和分发本项目，但请保留原作者版权声明。
+
 <div id="en"></div>
 
 ## 📖 English Description
@@ -150,3 +173,28 @@ DataSource:
 security:
   # MUST match the web system's hashing algorithm
   passwordHash: 'SHA256'
+
+```
+
+After the modification is complete, enter `/authme reload` in the console to reload the configuration.
+
+---
+
+## 🛡️ Security Mechanisms
+
+To ensure server security, this program includes the following built-in defense mechanisms:
+
+1.  **Anti-Brute Force Protection:**
+    * The admin login interface monitors **IP behavior** in real-time.
+    * If the same IP enters the wrong password **3 consecutive times** within 1 hour, the system will **automatically lock the IP**, preventing further access to the admin dashboard.
+    * **How to Unlock:** If you are the administrator and get locked out accidentally, use FTP or a file manager (like BT Panel) to delete the `login_limit.json` file in the website's root directory to immediately restore access.
+
+2.  **Installer Auto-Lock:**
+    * `install.php` will **automatically refuse to run** if it detects that the `config.php` file already exists, preventing unauthorized resets.
+
+---
+
+## 📄 Open Source License
+
+This project is licensed under the [MIT License](https://opensource.org/licenses/MIT).  
+You are free to use, modify, and distribute this project, provided that the original author's copyright notice is retained.
