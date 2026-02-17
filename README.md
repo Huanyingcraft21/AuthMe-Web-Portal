@@ -89,7 +89,7 @@ security:
 
 ## 📖 English Description
 
-**MeteorMCS Account Manager** is a lightweight, secure Web User Center designed for Minecraft servers. It allows players to register accounts via a web interface, reset passwords via email, and provides a powerful admin dashboard for server owners.
+**AuthMe Web Portal** is a lightweight, secure Web User Center designed for Minecraft servers. It allows players to register accounts via a web interface, reset passwords via email, and provides a powerful admin dashboard for server owners.
 
 This project is built to integrate seamlessly with the [AuthMeReloaded](https://github.com/AuthMe/AuthMeReloaded) plugin using MySQL.
 
