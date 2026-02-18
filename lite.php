@@ -1,13 +1,13 @@
 <?php
 /**
- * Project: 流星MCS v1.7 (All-in-One)
- * Note: 单文件全功能版 | 多服支持 | 内置后台
+ * Project: 流星MCS v1.8 All-in-One
+ * Note: 前后台合一，极致压缩，全功能
  */
 session_start();error_reporting(0);header('Content-Type:text/html;charset=utf-8');
-$CF='config.php';if(!file_exists($CF))die('<body style="text-align:center;padding:50px;font-family:sans-serif"><h2>⚠️ 尚未安装</h2><p>请先运行 <a href="install.php">install.php</a> 进行安装。</p></body>');
+$CF='config.php';if(!file_exists($CF))die('<body style="text-align:center;padding:50px"><h2>⚠️ No Config</h2><p>Run install.php first.</p></body>');
 $C=include$CF;$A=$_GET['a']??'';$M='';
 
-// --- 核心库 (压缩版) ---
+// --- 微缩核心库 ---
 $D=null;try{$D=new PDO("mysql:host={$C['db']['host']};dbname={$C['db']['name']}",$C['db']['user'],$C['db']['pass']);}catch(E $e){}
 function H($p){$s=bin2hex(random_bytes(8));return"\$SHA\$$s\$".hash('sha256',hash('sha256',$p).$s);}
 function V($p,$h){$x=explode('$',$h);return@$x[1]=='SHA'&&hash('sha256',hash('sha256',$p).@$x[2])===@$x[3];}
@@ -15,44 +15,45 @@ function J($s,$m,$d=[]){die(json_encode(array_merge(['s'=>$s,'m'=>$m],$d)));}
 function GD($f){return file_exists($f)?json_decode(file_get_contents($f),true):[];}
 function SD($f,$d){file_put_contents($f,json_encode($d));}
 function SC($n){global $CF;file_put_contents($CF,"<?php\nreturn ".var_export($n,true).";");}
-// Net
+// Net Libs
 class TR{private $s;function c($h,$p,$w){$this->s=@fsockopen($h,$p,$e,$r,2);if(!$this->s)return 0;$this->w(3,$w);return 1;}function m($c){$this->w(2,$c);return 1;}private function w($t,$d){$p=pack("VV",rand(),$t).$d."\x00\x00";fwrite($this->s,pack("V",strlen($p)).$p);}}
 class TM{function S($t,$s,$b,$o){if(!$t)return;$h=($o['secure']=='ssl'?'ssl://':'').$o['host'];$k=@fsockopen($h,$o['port']);if(!$k)return;$this->W($k,["EHLO $h","AUTH LOGIN",base64_encode($o['user']),base64_encode($o['pass']),"MAIL FROM:<{$o['user']}>","RCPT TO:<$t>","DATA"]);fwrite($k,"Content-Type:text/html;charset=UTF-8\r\nSubject:=?UTF-8?B?".base64_encode($s)."?=\r\n\r\n$b\r\n.\r\n");$this->W($k,["QUIT"]);fclose($k);}function W($k,$a){foreach($a as $c){fwrite($k,"$c\r\n");while($x=fgets($k,515))if(substr($x,3,1)==' ')break;}}}
 function Run($cmd,$i=0){global $C;$s=$C['servers'][$i]??0;if(!$s||!$s['rcon_pass'])return 0;$r=new TR;return($r->c($s['ip'],$s['rcon_port'],$s['rcon_pass']))?$r->m($cmd):0;}
 
-// --- 🎮 前台逻辑 ---
+// --- 🎮 前台业务 ---
 if($A=='g'){ // Reg
- if($_POST['c']!=$_SESSION['c'])J(0,'❌ 验证码错误');$u=strtolower(trim($_POST['u']));$ip=$_SERVER['REMOTE_ADDR'];
- if($D->query("SELECT id FROM authme WHERE username='$u'")->fetch())J(0,'⚠️ 用户名已存在');
+ if($_POST['c']!=$_SESSION['c'])J(0,'❌ 验证码错');$u=strtolower(trim($_POST['u']));$ip=$_SERVER['REMOTE_ADDR'];
+ if($D->query("SELECT id FROM authme WHERE username='$u'")->fetch())J(0,'⚠️ 已存在');
  $D->prepare("INSERT INTO authme(username,realname,password,email,ip,regdate,lastlogin)VALUES(?,?,?,?,?,?,?)")->execute([$u,$_POST['u'],H($_POST['p']),$_POST['e'],$ip,time()*1000,time()*1000]);
  if($c=$C['rewards']['reg_cmd'])Run(str_replace('%player%',$_POST['u'],$c),0);(new TM)->S($_POST['e'],"Welcome","Hi!",$C['smtp']);J(1,'🎉 注册成功');
 }
 if($A=='l'){ // Login
  $u=strtolower(trim($_POST['u']));$r=$D->query("SELECT * FROM authme WHERE username='$u'")->fetch();
- if($r&&V($_POST['p'],$r['password'])){$_SESSION['u']=$r;J(1,'OK');}J(0,'❌ 账号或密码错误');
+ if($r&&V($_POST['p'],$r['password'])){$_SESSION['u']=$r;J(1,'OK');}J(0,'❌ 失败');
 }
 if($A=='s'&&$u=$_SESSION['u']){ // Sign
- $f='user_data.json';$d=GD($f);$t=date('Ymd');if(($d[$u['username']]['l']??0)==$t)J(0,'📅 今日已签');$ok=0;
+ $f='user_data.json';$d=GD($f);$t=date('Ymd');if(($d[$u['username']]['l']??0)==$t)J(0,'📅 已签');$ok=0;
  foreach(($C['rewards']['sign_in_servers']??[])as$i)if(Run(str_replace('%player%',$u['realname'],$C['rewards']['daily_cmd']),$i))$ok++;
- if($ok){$d[$u['username']]['l']=$t;$d[$u['username']]['c']=($d[$u['username']]['c']??0)+1;SD($f,$d);J(1,'✅ 签到成功',$d[$u['username']]);}J(0,'❌ 连接服务器失败');
+ if($ok){$d[$u['username']]['l']=$t;$d[$u['username']]['c']=($d[$u['username']]['c']??0)+1;SD($f,$d);J(1,'✅ 成功',$d[$u['username']]);}J(0,'❌ 失败');
 }
 if($A=='k'&&$u=$_SESSION['u']){ // CDK
  $f='cdk_data.json';$d=GD($f);$k=trim($_POST['k']);$s=(int)$_POST['s'];$c=$d[$k]??0;
- if(!$c||$c['used']>=$c['max']||in_array($u['username'],$c['users']))J(0,'🚫 无效或已使用');
- if(isset($c['server_id'])&&$c['server_id']!=='all'&&(int)$c['server_id']!==$s)J(0,'⚠️ 此服无法使用该码');
+ if(!$c||$c['used']>=$c['max']||in_array($u['username'],$c['users']))J(0,'🚫 无效');
+ if(isset($c['server_id'])&&$c['server_id']!=='all'&&(int)$c['server_id']!==$s)J(0,'⚠️ 服不匹配');
  if(Run(str_replace('%player%',$u['realname'],$c['cmd']),($c['server_id']==='all'?$s:(int)$c['server_id']))){
-  $d[$k]['used']++;$d[$k]['users'][]=$u['username'];SD($f,$d);J(1,'🎁 兑换成功');
- }J(0,'❌ 发放失败');
+  $d[$k]['used']++;$d[$k]['users'][]=$u['username'];SD($f,$d);J(1,'🎁 成功');
+ }J(0,'❌ 失败');
 }
 
-// --- 🔧 后台逻辑 ---
-if($A=='alogin'){ if($_POST['u']===$C['admin']['user']&&$_POST['p']===$C['admin']['pass']){$_SESSION['adm']=1;J(1,'OK');}J(0,'❌ 密码错误'); }
+// --- 🔧 后台业务 ---
+if($A=='alogin'){ if($_POST['u']===$C['admin']['user']&&$_POST['p']===$C['admin']['pass']){$_SESSION['adm']=1;J(1,'OK');}J(0,'❌ 错'); }
 if($A=='asave' && $_SESSION['adm']){
-    $N=$C; foreach($_POST as $k=>$v)if(isset($N[$k]))$N[$k]=$v; 
+    $N=$C; foreach($_POST as $k=>$v)if(isset($N[$k]))$N[$k]=$v; // Simple override
+    // Deep merge for specific arrays
     if($_POST['sv_json'])$N['servers']=json_decode($_POST['sv_json'],true);
     $N['rewards']['sign_in_servers']=explode(',',$_POST['sis']);
     $N['display']['ip']=$_POST['dip'];$N['display']['port']=$_POST['dpt'];
-    SC($N);J(1,'✅ 配置已保存');
+    SC($N);J(1,'✅ 保存成功');
 }
 if($A=='acdk' && $_SESSION['adm']){
     $d=GD('cdk_data.json');$c=trim($_POST['c']);
@@ -64,13 +65,31 @@ if($A=='arcon' && $_SESSION['adm']){ J(1,Run($_POST['cmd'],(int)$_POST['sid'])?'
 // Commons
 if($A=='p'){$n=rand(1111,9999);$_SESSION['c']=$n;$i=imagecreatetruecolor(60,34);imagefill($i,0,0,0x3b82f6);imagestring($i,5,12,9,$n,0xffffff);header('Content-type:image/png');imagepng($i);exit;}
 if($A=='out'){session_destroy();header("Location:?");exit;}
-
+// 🔥🔥 核心修复：更新逻辑 🔥🔥
+if($A=='up_c' && $_SESSION['adm']){ // Check
+    $v=trim(@file_get_contents($REPO.'version.txt'));
+    if($v && version_compare($v,$C['site']['ver'],'>')) J(1,"发现新版本 v$v",['v'=>$v]);
+    J(0,'当前已是最新版');
+}
+if($A=='up_d' && $_SESSION['adm']){ // Do Update
+    // 1. 下载 lite.php 覆盖 index.php (自我更新)
+    $c=@file_get_contents($REPO.'lite.php');
+    if($c){ file_put_contents(__FILE__, $c); } else J(0,'下载失败');
+    // 2. 合并配置
+    $sc=@file_get_contents($REPO.'config_sample.php');
+    if($sc){
+        file_put_contents('ctmp.php',$sc); $tpl=include('ctmp.php'); $old=include('config.php'); unlink('ctmp.php');
+        $new=array_replace_recursive($tpl,$old);
+        $v=trim(@file_get_contents($REPO.'version.txt')); if($v)$new['site']['ver']=$v;
+        SC($new); J(1,'🎉 更新成功！正在刷新...');
+    } J(0,'配置合并失败');
+}
 // --- 渲染 ---
 $BG=$C['site']['bg']?:'https://images.unsplash.com/photo-1607988795691-3d0147b43231?q=80&w=1920';
 ?>
 <!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title><?= $C['site']['title'] ?></title>
 <script src="https://cdn.tailwindcss.com"></script>
-<style>body{background:url('<?= $BG ?>') center/cover fixed}.g{background:rgba(255,255,255,0.9);backdrop-filter:blur(12px);border-radius:1rem;box-shadow:0 8px 32px rgba(0,0,0,0.2)}.i{width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;margin-bottom:8px}.b{width:100%;padding:10px;border-radius:6px;font-weight:bold;color:white;background:#2563eb}.h{display:none}</style>
+<style>body{background:url('<?= $BG ?>') center/cover fixed}.g{background:rgba(255,255,255,0.9);backdrop-filter:blur(10px);border-radius:1rem;box-shadow:0 8px 32px rgba(0,0,0,0.2)}.i{width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;margin-bottom:8px}.b{width:100%;padding:10px;border-radius:6px;font-weight:bold;color:white;background:#2563eb}.h{display:none}</style>
 </head><body class="flex items-center justify-center min-h-screen p-4 text-gray-800">
 
 <?php if($A=='admin' || isset($_SESSION['adm'])): ?>
@@ -84,7 +103,7 @@ $BG=$C['site']['bg']?:'https://images.unsplash.com/photo-1607988795691-3d0147b43
     <?php else: ?>
         <div class="g w-full max-w-4xl p-6 h-[85vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-6 pb-4 border-b">
-                <h2 class="text-xl font-bold">🛠️ 控制面板 <span class="text-xs font-normal text-gray-500">v1.7 All-in-One</span></h2>
+                <h2 class="text-xl font-bold">🛠️ 控制面板 <span class="text-xs font-normal text-gray-500">All-in-One v1.8</span></h2>
                 <a href="?a=out" class="text-red-500 text-sm font-bold">退出</a>
             </div>
             
@@ -94,7 +113,7 @@ $BG=$C['site']['bg']?:'https://images.unsplash.com/photo-1607988795691-3d0147b43
                     <div class="space-y-1">
                         <label class="text-xs">网站标题</label><input id="st" value="<?=$C['site']['title']?>" class="i">
                         <label class="text-xs">背景图URL</label><input id="bg" value="<?=$C['site']['bg']?>" class="i">
-                        <label class="text-xs">前端展示IP (Proxy)</label><input id="dip" value="<?=$C['display']['ip']?>" class="i">
+                        <label class="text-xs">展示IP (前端用)</label><input id="dip" value="<?=$C['display']['ip']?>" class="i">
                         <label class="text-xs">展示端口</label><input id="dpt" value="<?=$C['display']['port']?>" class="i">
                         <label class="text-xs">RCON服务器列表 (JSON)</label>
                         <textarea id="svj" class="i font-mono text-xs h-24 bg-gray-50"><?=json_encode($C['servers'])?></textarea>
