@@ -1,201 +1,285 @@
 <div id="cn"></div>
 
-# AuthMe账号管理面板 / AuthMe Web Portal
+# 🌠 流星AWP (Meteor AWP) - v1.7.5
 
 [English](#en) | [中文说明](#cn)
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg) ![PHP](https://img.shields.io/badge/php-7.4%2B-purple.svg) ![Version](https://img.shields.io/badge/version-v1.5-green.svg)
+**新一代 Minecraft AuthMe 网页端用户中心** *支持多服务器群组 | RCON 奖励系统 | 极简与美学的完美融合*
 
-**流星MCS 账号管理器** 是一个专为 Minecraft 服务器设计的轻量级 Web 用户中心。它允许玩家通过网页注册账号、找回密码，并提供强大的后台管理功能。
+![Version](https://img.shields.io/badge/Version-1.7.5-blue.svg) ![PHP](https://img.shields.io/badge/PHP-7.4%2B-purple.svg) ![License](https://img.shields.io/badge/License-MIT-green.svg)
 
-本项目专为配合 [AuthMeReloaded](https://github.com/AuthMe/AuthMeReloaded) 插件使用，支持 MySQL 数据库同步。
-
----
-
-## <a name="中文说明"></a>✨ 功能特性 (Features)
-
-* **双版本选择**：提供 **标准版 (Standard)** 和 **单文件版 (Lite)** 以适应不同需求。
-* **玩家注册**：简洁现代的 UI，集成图形验证码，防止机器注册。
-* **密码找回**：内置轻量级 SMTP 客户端，支持邮件发送验证码重置密码。
-* **后台管理**：
-    * 可视化修改系统设置（数据库、SMTP、管理员账号）。
-    * 查看和搜索注册玩家信息。
-    * 一键发送测试邮件。
-* **安全防护**：
-    * **防暴力破解**：同一 IP 连续 3 次密码错误自动封禁 1 小时。
-    * **安装锁**：检测到配置文件后自动禁用安装程序。
-* **零依赖**：无需 Composer，无需复杂框架，上传即用。
+流星AWP 是一个专为 Minecraft 服务器打造的现代化网页门户。它不仅支持 AuthMe 注册，更是一个完整的玩家生态中心。v1.7.5 版本带来了全新的**多服务器架构支持**，完美适配 BungeeCord / Velocity 群组服环境。
 
 ---
 
-## 📦 版本对比 (Editions)
+## ✨ 核心特性
 
-| 特性 | 标准版 (Standard v1.5) | Lite 单文件版 (Lite v0.150) |
-| :--- | :--- | :--- |
-| **文件结构** | 分离式 (`index.php`, `admin.php`, `install.php`) | 单文件 (`index.php`) |
-| **安全性** | ⭐⭐⭐⭐⭐ (后台入口可隐藏/改名) | ⭐⭐⭐ (入口固定) |
-| **维护性** | 高 (逻辑清晰，易于二次开发) | 中 (便携为主) |
-| **适用场景** | 正式运营服务器、长期项目 | 测试服、好友联机、临时部署 |
+### 🌍 多服务器架构 (New)
+* **群组服支持**：后台可配置无限个子服务器（如生存服、空岛服、登录服）。
+* **独立状态显示**：支持配置**公开展示 IP** (Proxy/IP) 与 **后端 RCON IP** 分离，完美解决内网/Docker 部署的状态查询问题。
+* **RCON 控制台**：后台内置 Web RCON 终端，可切换服务器发送指令。
 
----
+### 🎁 奖励与生态系统
+* **每日签到**：支持跨服奖励同步。玩家签到一次，后台配置的多个服务器可同时发放奖励。
+* **CDK 兑换中心**：生成礼包码，支持指定“全服通用”或“仅限特定服务器”使用。
+* **注册奖励**：新用户注册成功，自动下发新手礼包。
+* **邮件通知**：注册成功欢迎邮件 & 管理员新用户通知。
 
-## 🚀 快速开始 (Quick Start)
+### 🎨 极致 UI/UX
+* **Glassmorphism**：全站采用现代化毛玻璃拟态设计。
+* **响应式布局**：完美适配手机、平板、PC 端。
+* **自定义背景**：后台一键修改全站背景图。
 
-### 环境要求
-* PHP 7.4 或更高版本
-* MySQL / MariaDB 数据库
-* Web 服务器 (Nginx/Apache/IIS)
-* Minecraft 服务器安装了 AuthMeReloaded 插件
-
-### 🛠️ 部署步骤
-
-#### 方案 A：部署标准版 (推荐)
-1.  下载本项目中的 `Standard` 文件夹内容。
-2.  将 `index.php`, `install.php`, `admin.php` 上传至网站根目录。
-3.  访问 `http://你的域名/install.php` 进行初始化安装。
-4.  **安全建议**：安装完成后，请删除 `install.php`，并将 `admin.php` 重命名为只有你知道的名字（如 `manager_888.php`）。
-
-#### 方案 B：部署 Lite 版
-1.  下载本项目中的 `Lite` 文件夹内容。
-2.  将 `index.php` (原名 lite.php) 上传至网站根目录。
-3.  访问 `http://你的域名/index.php`，系统会自动引导进入安装界面。
+### 🚀 双版本发行
+* **Standard 标准版**：逻辑分离，带完整后台管理，支持 **GitHub OTA 一键自动更新**。
+* **Lite 单文件版**：极致压缩，单文件集成了注册、登录、签到、CDK、多服支持等所有核心功能。
 
 ---
 
-### 🔌 AuthMe 插件配置
+## 📦 快速部署 (推荐)
 
-为了让网页注册的账号能在游戏里登录，请务必修改服务器端 `plugins/AuthMe/config.yml`：
+我们引入了全新的 **云端安装程序**，您无需手动上传大量文件。
 
-```yaml
-DataSource:
-  backend: 'MYSQL'
-  mySQLHost: '127.0.0.1' # 数据库地址
-  mySQLPort: '3306'
-  mySQLUsername: '你的数据库用户名'
-  mySQLPassword: '你的数据库密码'
-  mySQLDatabase: '你的数据库名(默认authme)'
-  mySQLColumnName: 'username'
-  mySQLColumnPassword: 'password'
-  mySQLColumnIp: 'ip'
-  mySQLColumnLastLogin: 'lastlogin'
-  mySQLColumnEmail: 'email'
-  
-security:
-  # 必须与网页端加密方式一致
-  passwordHash: 'SHA256'
+1.  下载仓库中的 `install.php` 文件。
+2.  将其上传到您的网站根目录。
+3.  访问 `http://您的域名/install.php`。
+4.  **选择版本**：
+    * **标准版 (推荐)**：自动下载后台、核心库、前台，适合正式运营。
+    * **Lite版**：自动部署为单文件模式，适合极简主义者。
+5.  填写数据库信息，安装程序将自动完成环境配置。
+
+---
+
+## ⚙️ 配置说明 (config.php)
+
+v1.7.5 采用了全新的配置结构，以下是关键配置详解：
+
+```php
+return [
+    // 1. 站点基础
+    'site' => [
+        'title' => '流星群组服',
+        'ver'   => '1.7.5',
+        'bg'    => '[https://example.com/bg.jpg](https://example.com/bg.jpg)', // 自定义背景图
+    ],
+
+    // 2. [关键] 前端状态显示 (代理端/公开地址)
+    // 这是前台页面顶部显示的“在线人数”和“MOTD”查询地址
+    // 如果您是群组服，请填写 BC/Velocity 的公开 IP
+    'display' => [
+        'ip'   => 'play.example.com',
+        'port' => '25565'
+    ],
+
+    // 3. [关键] 后端服务器列表 (RCON 连接用)
+    // 用于发送奖励指令。数组下标 0, 1, 2 代表服务器 ID
+    'servers' => [
+        // ID: 0 - 通常设为大厅或主生存服
+        [
+            'name'      => '生存一区',
+            'ip'        => '127.0.0.1', // 后端内网IP
+            'port'      => '25565',     // 游戏端口
+            'rcon_port' => '25575',     // RCON端口
+            'rcon_pass' => 'password'   // RCON密码
+        ],
+        // ID: 1
+        [
+            'name'      => '空岛二区',
+            'ip'        => '127.0.0.1',
+            'port'      => '25566',
+            'rcon_port' => '25576',
+            'rcon_pass' => 'password'
+        ]
+    ],
+
+    // 4. 奖励策略
+    'rewards' => [
+        'reg_cmd'         => 'mg give %player% starter_kit 1', // 注册奖励 (默认发往 ID:0 服务器)
+        'daily_cmd'       => 'mg give %player% point 10',      // 签到奖励指令
+        'sign_in_servers' => [0, 1]                            // 签到奖励发往哪些服务器？(填写ID)
+    ],
+
+    // ... 数据库与 SMTP 配置 ...
+];
 
 ```
 
-修改完成后，在控制台输入 `/authme reload` 重载配置。
+### 🛠️ 后台管理指南 (Standard版)
+
+访问 `/admin.php` 进入后台：
+
+1. **检查更新**：点击左侧侧边栏的 **【检查更新】**，如有新版本，系统将自动从 GitHub 拉取代码并智能合并配置，无损升级。
+2. **RCON 终端**：在“网页控制台”页面，您可以选择任意一个已配置的服务器，直接发送后台指令。
+3. **CDK 管理**：生成 CDK 时，您可以指定该 CDK 是 **“全服通用”** 还是 **“仅限特定服务器”** 使用。
 
 ---
 
-## 🛡️ 安全机制说明
+### ⚡ 关于 Lite 版 (Extreme Edition)
 
-为了保护服务器安全，本程序内置了以下防御机制：
+v1.7.5 的 Lite 版是一个技术奇迹。
 
-1.  **后台防爆破 (Anti-Brute Force)：**
-    * 后台登录接口会实时监测 **IP 行为**。
-    * 如果同一个 IP 在 1 小时内连续输错 3 次密码，系统将**自动锁定该 IP**，期间无法访问后台。
-    * **解锁方法：** 如果你是管理员且不小心被锁，请通过 FTP 或宝塔面板的文件管理器，删除网站根目录下的 `login_limit.json` 文件，即可立即解除锁定。
-
-2.  **安装程序自锁：**
-    * `install.php` 在检测到配置文件 `config.php` 存在时，会**自动拒绝运行**，防止被他人恶意重置。
+* **体积**：单文件，代码经过极致压缩。
+* **功能**：完全保留了标准版的所有前台功能（多服签到、选服CDK、状态显示、Glassmorphism UI）。
+* **使用**：它依赖 `install.php` 生成的 `config.php`。但后台入口改成了?a=admin
 
 ---
 
-## 📄 开源协议
+### 📝 常见问题
 
-本项目遵循 [MIT License](https://opensource.org/licenses/MIT) 协议。  
-你可以自由地使用、修改和分发本项目，但请保留原作者版权声明。
+**Q: 为什么前台状态条不显示？**
+A: 请检查后台设置中的 **“公开展示地址”**。前端必须能通过公网 API 访问到该 IP。如果您的服务器开启了防火墙，请确保 API 接口未被拦截。
+
+**Q: 签到奖励没有到账？**
+A: 1. 请确保后台 **RCON 密码** 正确。 2. 请确保在“奖励配置”中填写了 `sign_in_servers` (如 `0` 或 `0,1`)，否则系统不知道该往哪个服发奖。
+
+**Q: 如何配合 MetorGive 插件？**
+A: 本程序专为 MetorGive 优化，利用其离线发奖功能。请在服务器安装插件，并在后台将指令设置为 `/mg give %player% <物品> <数量>`。
+
+---
+
+### 📄 开源协议
+
+本项目遵循 **MIT License** 开源协议。您可以自由修改、分发或用于商业用途。
 
 <div id="en"></div>
 
-## 📖 English Description
+# 🌠 Meteor AWP - v1.7.5
 
-**AuthMe Web Portal** is a lightweight, secure Web User Center designed for Minecraft servers. It allows players to register accounts via a web interface, reset passwords via email, and provides a powerful admin dashboard for server owners.
+[English](#en) | [中文说明](#cn)
 
-This project is built to integrate seamlessly with the [AuthMeReloaded](https://github.com/AuthMe/AuthMeReloaded) plugin using MySQL.
+**Next-Gen Minecraft AuthMe Web Portal** *Multi-Server Support | RCON Reward System | Aesthetic Glassmorphism UI*
 
-### ✨ Features
+![Version](https://img.shields.io/badge/Version-1.7.5-blue.svg) ![PHP](https://img.shields.io/badge/PHP-7.4%2B-purple.svg) ![License](https://img.shields.io/badge/License-MIT-green.svg)
 
-* **Two Editions**: Available in **Standard (v1.5)** and **Lite (v0.150)** to suit different needs.
-* **User Registration**: Modern UI with built-in Captcha protection.
-* **Password Reset**: Integrated lightweight SMTP client for sending verification codes via email.
-* **Admin Dashboard**:
-    * Visual configuration for Database, SMTP, and Admin credentials.
-    * Manage and search registered players.
-    * One-click email configuration testing.
-* **Security**:
-    * **Brute-force Protection**: IP is locked for 1 hour after 3 failed login attempts.
-    * **Install Lock**: The installer is automatically disabled after configuration is generated.
-* **Zero Dependencies**: No Composer required, no complex frameworks. Just upload and run.
+Meteor AWP is a modern web portal designed specifically for Minecraft servers. It goes beyond simple AuthMe registration to become a complete player ecosystem center. **v1.7.5** introduces a brand new **Multi-Server Architecture**, making it perfectly compatible with BungeeCord / Velocity networks.
 
-### 📦 Editions
+---
 
-| Feature | Standard Edition (v1.5) | Lite Edition (v0.150) |
-| :--- | :--- | :--- |
-| **Structure** | Separated Files (`index.php`, `admin.php`, `install.php`) | Single File (`index.php`) |
-| **Security** | ⭐⭐⭐⭐⭐ (Admin URL can be hidden/renamed) | ⭐⭐⭐ (Fixed URL) |
-| **Maintainability** | High (Clear logic separation) | Medium (Portable focused) |
-| **Best For** | Production Servers, Long-term use | Test Servers, Private SMPs |
+## ✨ Core Features
 
-### 🚀 Quick Start
+### 🌍 Multi-Server Architecture (New)
+* **Network Support**: Configure unlimited sub-servers (e.g., Survival, Skyblock, Lobby) in the admin panel.
+* **Independent Status Display**: Separate the **Public Display IP** (Proxy/IP) from the **Backend RCON IP**. Perfect for internal networks or Docker environments.
+* **Web RCON Console**: Built-in web terminal to switch between servers and send commands directly.
 
-#### Prerequisites
-* PHP 7.4 or higher
-* MySQL / MariaDB
-* Web Server (Nginx/Apache/IIS)
-* Minecraft Server with AuthMeReloaded plugin installed
+### 🎁 Rewards & Ecosystem
+* **Daily Sign-in**: Supports cross-server reward synchronization. Players sign in once, and the system executes commands on multiple configured servers simultaneously.
+* **CDK Redemption Center**: Generate gift codes (CDK). Supports "Global" codes or "Server-Specific" codes.
+* **Registration Rewards**: Automatically issue starter kits to new users upon registration.
+* **Notifications**: Welcome emails for registration & New User alerts for admins.
 
-#### 🛠️ Installation
+### 🎨 Ultimate UI/UX
+* **Glassmorphism**: A modern, frosted-glass design language.
+* **Responsive**: Perfectly adapted for Mobile, Tablet, and PC.
+* **Customization**: Change the global background image with one click in the admin panel.
 
-**Option A: Standard Edition (Recommended)**
-1.  Download files from the `Standard` folder.
-2.  Upload `index.php`, `install.php`, and `admin.php` to your web root.
-3.  Navigate to `http://yourdomain.com/install.php` to run the setup wizard.
-4.  **Security Tip**: After installation, DELETE `install.php` and RENAME `admin.php` to something secret (e.g., `super_admin.php`) to hide your dashboard.
+### 🚀 Dual Editions
+* **Standard Edition**: Logic separation (Core/View/Admin), complete Admin Panel, supports **One-Click OTA Updates via GitHub**.
+* **Lite Edition**: Extreme compression. A single file integrating Registration, Login, Sign-in, CDK, and Multi-server support.
 
-**Option B: Lite Edition**
-1.  Download the file from the `Lite` folder.
-2.  Upload `index.php` to your web root.
-3.  Navigate to `http://yourdomain.com/index.php`. It will automatically redirect you to the installation setup.
+---
 
-### 🔌 AuthMe Configuration
+## 📦 Quick Deployment (Recommended)
 
-To ensure web-registered accounts work in-game, verify your `plugins/AuthMe/config.yml` settings:
+We utilize a **Cloud Installer**, so you don't need to upload dozens of files manually.
 
-```yaml
-DataSource:
-  backend: 'MYSQL'
-  mySQLHost: '127.0.0.1' # Database Host
-  # ... enter your credentials
-  
-security:
-  # MUST match the web system's hashing algorithm
-  passwordHash: 'SHA256'
+1.  Download the `install.php` file from the repository.
+2.  Upload it to your web root directory.
+3.  Visit `http://your-domain.com/install.php`.
+4.  **Select Edition**:
+    * **Standard (Recommended)**: Downloads Admin Panel, Core, and Frontend. Best for production.
+    * **Lite**: Deploys as a single-file mode. Best for minimalists.
+5.  Fill in your database information, and the installer will handle the environment configuration automatically.
+
+---
+
+## ⚙️ Configuration (config.php)
+
+v1.7.5 uses a new configuration structure. Here are the key details:
+
+```php
+return [
+    // 1. Site Basics
+    'site' => [
+        'title' => 'Meteor Network',
+        'ver'   => '1.7.5',
+        'bg'    => '[https://example.com/bg.jpg](https://example.com/bg.jpg)', // Custom background URL
+    ],
+
+    // 2. [Critical] Frontend Status Display (Proxy/Public Address)
+    // This controls the "Online Players" and "MOTD" shown at the top of the frontend.
+    // If you run a Network, enter your BC/Velocity Public IP here.
+    'display' => [
+        'ip'   => 'play.example.com',
+        'port' => '25565'
+    ],
+
+    // 3. [Critical] Backend Server List (For RCON Connection)
+    // Used for sending reward commands. 0, 1, 2 represents the Server ID.
+    'servers' => [
+        // ID: 0 - Usually the Lobby or Main Survival Server
+        [
+            'name'      => 'Survival #1',
+            'ip'        => '127.0.0.1', // Backend Internal IP
+            'port'      => '25565',     // Game Port
+            'rcon_port' => '25575',     // RCON Port
+            'rcon_pass' => 'password'   // RCON Password
+        ],
+        // ID: 1
+        [
+            'name'      => 'Skyblock #2',
+            'ip'        => '127.0.0.1',
+            'port'      => '25566',
+            'rcon_port' => '25576',
+            'rcon_pass' => 'password'
+        ]
+    ],
+
+    // 4. Reward Strategy
+    'rewards' => [
+        'reg_cmd'         => 'mg give %player% starter_kit 1', // Reg Reward (Sent to ID:0 by default)
+        'daily_cmd'       => 'mg give %player% point 10',      // Daily Sign-in Command
+        'sign_in_servers' => [0, 1]                            // Which servers receive the sign-in command? (IDs)
+    ],
+
+    // ... Database & SMTP configurations ...
+];
 
 ```
 
-After the modification is complete, enter `/authme reload` in the console to reload the configuration.
+### 🛠️ Admin Management Guide (Standard Version)
+
+Visit `/admin.php` to access the admin panel:
+
+1. **Check Updates**: Click **[Check Updates]** in the left sidebar. If a new version is available, the system will automatically pull code from GitHub and intelligently merge configurations for a seamless upgrade.
+2. **RCON Terminal**: On the "Web Console" page, you can select any configured server and send backend commands directly.
+3. **CDK Management**: When generating a CDK, you can specify whether it is for **"Global Use"** or **"Specific Server Only"**.
 
 ---
 
-## 🛡️ Security Mechanisms
+### ⚡ About Lite Version (Extreme Edition)
 
-To ensure server security, this program includes the following built-in defense mechanisms:
+The v1.7.5 Lite version is a technical marvel.
 
-1.  **Anti-Brute Force Protection:**
-    * The admin login interface monitors **IP behavior** in real-time.
-    * If the same IP enters the wrong password **3 consecutive times** within 1 hour, the system will **automatically lock the IP**, preventing further access to the admin dashboard.
-    * **How to Unlock:** If you are the administrator and get locked out accidentally, use FTP or a file manager (like BT Panel) to delete the `login_limit.json` file in the website's root directory to immediately restore access.
+* **Size**: Single file, with extremely compressed code.
+* **Features**: Retains all frontend features of the Standard version (Multi-server Sign-in, Server Selector CDK, Status Display, Glassmorphism UI).
+* **Usage**: It relies on the `config.php` generated by `install.php`. But the entry point has been changed to /?a=admin
+---
 
-2.  **Installer Auto-Lock:**
-    * `install.php` will **automatically refuse to run** if it detects that the `config.php` file already exists, preventing unauthorized resets.
+### 📝 FAQ
+
+**Q: Why is the frontend status bar not showing?**
+A: Please check the **"Public Display Address"** in the admin settings. The frontend must be able to access this IP via the public API. If your server has a firewall enabled, ensure the API port is not blocked.
+
+**Q: Sign-in rewards not received?**
+A: 1. Ensure the **RCON Password** in the backend is correct. 2. Ensure `sign_in_servers` is filled in the "Reward Configuration" (e.g., `0` or `0,1`); otherwise, the system won't know which server to send rewards to.
+
+**Q: How to work with the MetorGive plugin?**
+A: This program is optimized for MetorGive, utilizing its offline delivery feature. Please install the plugin on your server and set the command in the backend to `/mg give %player% <item> <amount>`.
 
 ---
 
-## 📄 Open Source License
+### 📄 Open Source License
 
-This project is licensed under the [MIT License](https://opensource.org/licenses/MIT).  
-You are free to use, modify, and distribute this project, provided that the original author's copyright notice is retained.
+This project is licensed under the **MIT License**. You are free to modify, distribute, or use it for commercial purposes.
+
