@@ -1,161 +1,167 @@
 <?php
 /**
- * Project: 流星MCS 账号管理器 (Standard)
- * Version: v1.5
- * Note: 前台核心 (注册/找回/公共库)
+ * Project: 流星MCS 前台
+ * Version: v1.6 Final
  */
 session_start();
 header('Content-Type: text/html; charset=utf-8');
-error_reporting(0);
+require_once 'core.php';
+if (basename($_SERVER['PHP_SELF']) == 'config.php' || defined('IN_ADMIN')) return;
 
-$configFile = 'config.php';
-
-// --- 安全检查 ---
-if (!file_exists($configFile)) {
-    die("<!DOCTYPE html><html><body style='font-family:sans-serif;text-align:center;padding-top:50px;'>
-    <h1 style='color:#eab308;'>⚠️ 系统未初始化</h1>
-    <p>请上传 <b>install.php</b> 并访问它进行安装。</p>
-    </body></html>");
-}
-
-if (basename($_SERVER['PHP_SELF']) == $configFile) die('Access Denied');
-
-// --- 加载配置 ---
-$defaultConfig = [
-    'db' => ['host'=>'127.0.0.1', 'name'=>'authme', 'user'=>'root', 'pass'=>''],
-    'smtp' => ['host'=>'smtp.qq.com', 'port'=>465, 'user'=>'', 'pass'=>'', 'secure'=>'ssl', 'from_name'=>'流星MCS'],
-    'admin' => ['user'=>'admin', 'pass'=>'password123'],
-    'site' => ['title'=>'流星MCS玩家注册', 'ver'=>'v1.5']
-];
-$loaded = include($configFile);
-$config = isset($loaded['host']) ? array_replace_recursive($defaultConfig, ['db'=>$loaded]) : array_replace_recursive($defaultConfig, $loaded);
-
-// --- 核心库 ---
-function saveConfig($newConfig) {
-    global $configFile;
-    return file_put_contents($configFile, "<?php\nreturn " . var_export($newConfig, true) . ";");
-}
-function hashAuthMe($p) {
-    $s = bin2hex(random_bytes(8));
-    return "\$SHA\$" . $s . "\$" . hash('sha256', hash('sha256', $p) . $s);
-}
-class TinySMTP {
-    private $sock;
-    public function send($to, $subject, $body, $conf) {
-        $host = ($conf['secure'] == 'ssl' ? 'ssl://' : '') . $conf['host'];
-        $this->sock = fsockopen($host, $conf['port'], $errno, $errstr, 10);
-        if (!$this->sock) return false;
-        $this->cmd(NULL); $this->cmd("EHLO " . $conf['host']); $this->cmd("AUTH LOGIN");
-        $this->cmd(base64_encode($conf['user'])); $this->cmd(base64_encode($conf['pass']));
-        $this->cmd("MAIL FROM: <{$conf['user']}>"); $this->cmd("RCPT TO: <$to>"); $this->cmd("DATA");
-        $headers = "MIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n";
-        $headers .= "From: =?UTF-8?B?".base64_encode($conf['from_name'])."?= <{$conf['user']}>\r\nTo: $to\r\nSubject: =?UTF-8?B?".base64_encode($subject)."?=\r\n";
-        fwrite($this->sock, "$headers\r\n$body\r\n.\r\n");
-        $res = $this->get_lines(); $this->cmd("QUIT"); fclose($this->sock);
-        return strpos($res, "250") !== false;
-    }
-    private function cmd($c) { if($c) fwrite($this->sock, $c."\r\n"); return $this->get_lines(); }
-    private function get_lines() { $d=""; while($s=fgets($this->sock,515)){$d.=$s; if(substr($s,3,1)==" ")break;} return $d; }
-}
-
-// --- DB连接 ---
-$pdo = null;
-if (!empty($config['db']['name'])) {
-    try {
-        $dsn = "mysql:host={$config['db']['host']};dbname={$config['db']['name']};charset=utf8mb4";
-        $pdo = new PDO($dsn, $config['db']['user'], $config['db']['pass'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-    } catch (Exception $e) {}
-}
-
-if (defined('IN_ADMIN')) return; 
-
-// --- 前端逻辑 ---
 $action = $_GET['action'] ?? 'home';
 
+// Login
+if ($action === 'do_login') {
+    $u = strtolower(trim($_POST['username'])); $p = $_POST['password'];
+    $stmt = $pdo->prepare("SELECT id, username, password, realname FROM authme WHERE username = ?");
+    $stmt->execute([$u]);
+    if ($row = $stmt->fetch()) {
+        if (verifyAuthMe($p, $row['password'])) { $_SESSION['user'] = $row; header("Location: ?action=user_center"); }
+        else header("Location: ?action=login&msg=err_pass");
+    } else header("Location: ?action=login&msg=err_user");
+    exit;
+}
+if ($action === 'do_logout') { session_destroy(); header("Location: ?action=home"); exit; }
+
+// Register
 if ($action === 'do_reg') {
     if ($_POST['captcha'] != $_SESSION['captcha']) { header("Location: ?msg=err_captcha"); exit; }
-    $u = strtolower(trim($_POST['username']));
-    if ($pdo->prepare("SELECT id FROM authme WHERE username=?")->execute([$u]) && $pdo->prepare("SELECT id FROM authme WHERE username=?")->fetch()) {
-        header("Location: ?msg=err_exists"); exit;
-    }
-    $pdo->prepare("INSERT INTO authme (username, realname, password, email, ip, regdate, lastlogin) VALUES (?,?,?,?,?,?,?)")
-        ->execute([$u, $_POST['username'], hashAuthMe($_POST['password']), $_POST['email'], $_SERVER['REMOTE_ADDR'], time()*1000, time()*1000]);
+    $u = strtolower(trim($_POST['username'])); $ip = $_SERVER['REMOTE_ADDR'];
+    if ($pdo->prepare("SELECT id FROM authme WHERE username=?")->execute([$u]) && $pdo->prepare("SELECT id FROM authme WHERE username=?")->fetch()) { header("Location: ?msg=err_exists"); exit; }
+    if ($pdo->prepare("SELECT id FROM authme WHERE ip=?")->execute([$ip]) && $pdo->prepare("SELECT id FROM authme WHERE ip=?")->fetch()) { header("Location: ?msg=err_ip"); exit; }
+    
+    $pdo->prepare("INSERT INTO authme (username,realname,password,email,ip,regdate,lastlogin) VALUES (?,?,?,?,?,?,?)")->execute([$u,$_POST['username'],hashAuthMe($_POST['password']),$_POST['email'],$ip,time()*1000,time()*1000]);
+    
+    if(!empty($config['rewards']['reg_cmd'])) runRcon(str_replace('%player%', $_POST['username'], $config['rewards']['reg_cmd']));
+    $smtp=new TinySMTP(); 
+    $smtp->send($_POST['email'], "欢迎加入", "<h3>🎉 注册成功</h3><p>欢迎加入服务器！</p>", $config['smtp']);
+    if(!empty($config['admin']['email'])) $smtp->send($config['admin']['email'], "新玩家注册", "玩家: {$_POST['username']}", $config['smtp']);
+    
     header("Location: ?msg=reg_ok"); exit;
 }
-if ($action === 'do_send_code') {
-    $email = $_POST['email'];
-    $u = $pdo->prepare("SELECT id FROM authme WHERE email = ?"); $u->execute([$email]);
-    if ($row = $u->fetch()) {
-        $code = rand(100000, 999999);
-        $pdo->prepare("UPDATE authme SET reset_code=?, reset_time=? WHERE id=?")->execute([$code, time()+300, $row['id']]);
-        $smtp = new TinySMTP();
-        $res = $smtp->send($email, "密码重置", "验证码：<b style='color:blue'>$code</b>", $config['smtp']);
-        echo json_encode(['status' => $res?'ok':'err', 'msg' => $res?'发送成功':'发送失败']);
-    } else { echo json_encode(['status'=>'err', 'msg'=>'邮箱未注册']); } exit;
+
+// Sign & CDK
+if ($action === 'do_sign' && isset($_SESSION['user'])) {
+    $u = $_SESSION['user']['username']; $d = getUserData($u); $today = date('Ymd');
+    if (($d['last_sign'] ?? 0) == $today) { echo json_encode(['s'=>0, 'm'=>'📅 今天已签到']); exit; }
+    if (runRcon(str_replace('%player%', $_SESSION['user']['realname'], $config['rewards']['daily_cmd']))) {
+        setUserData($u, 'last_sign', $today);
+        $count = ($d['sign_count'] ?? 0) + 1; setUserData($u, 'sign_count', $count);
+        echo json_encode(['s'=>1, 'm'=>'✅ 签到成功！(累计'.$count.'天)']);
+    } else { echo json_encode(['s'=>0, 'm'=>'❌ RCON失败']); } exit;
 }
-if ($action === 'do_reset') {
-    if ($pdo->prepare("SELECT id FROM authme WHERE email=? AND reset_code=? AND reset_time>?")->execute([$_POST['email'], $_POST['code'], time()]) && $pdo->prepare("SELECT id FROM authme WHERE email=? AND reset_code=? AND reset_time>?")->fetchAll()) {
-        $pdo->prepare("UPDATE authme SET password=?, reset_code=NULL WHERE email=?")->execute([hashAuthMe($_POST['password']), $_POST['email']]);
-        header("Location: ?msg=reset_ok");
-    } else { header("Location: ?action=forgot&msg=err_code"); } exit;
+if ($action === 'do_cdk' && isset($_SESSION['user'])) {
+    $code = trim($_POST['code']); $u = $_SESSION['user']['username']; $cdks = getCdks();
+    if (!isset($cdks[$code])) { echo json_encode(['s'=>0,'m'=>'🚫 无效兑换码']); exit; }
+    $c = $cdks[$code];
+    if ($c['used'] >= $c['max']) { echo json_encode(['s'=>0,'m'=>'⚠️ 已抢光']); exit; }
+    if (in_array($u, $c['users'])) { echo json_encode(['s'=>0,'m'=>'⚠️ 已领取过']); exit; }
+    if (runRcon(str_replace('%player%', $_SESSION['user']['realname'], $c['cmd']))) {
+        $c['used']++; $c['users'][] = $u; updateCdk($code, $c);
+        echo json_encode(['s'=>1,'m'=>'🎁 兑换成功！']);
+    } else { echo json_encode(['s'=>0,'m'=>'❌ 发放失败']); } exit;
 }
-if ($action === 'captcha') {
-    $c = (string)rand(1000, 9999); $_SESSION['captcha'] = $c;
-    $i = imagecreatetruecolor(70, 35); imagefill($i, 0, 0, 0x3b82f6); imagestring($i, 5, 15, 10, $c, 0xffffff); header("Content-type: image/png"); imagepng($i); imagedestroy($i); exit;
-}
+if ($action === 'captcha') { $c=rand(1000,9999);$_SESSION['captcha']=$c;$i=imagecreatetruecolor(70,36);imagefill($i,0,0,0x3b82f6);imagestring($i,5,15,10,$c,0xffffff);header("Content-type: image/png");imagepng($i);exit; }
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($config['site']['title']) ?></title>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title><?= htmlspecialchars($config['site']['title']) ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background: #f3f4f6; min-height: 100vh; font-family: sans-serif; }
-        .center-wrap { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 1rem; }
-        .card { background: white; padding: 2rem; border-radius: 1rem; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 100%; max-width: 400px; }
-        .input { width: 100%; padding: 0.6rem; border: 1px solid #e5e7eb; border-radius: 0.5rem; outline: none; transition: 0.2s; background: #fff; }
-        .input:focus { border-color: #3b82f6; ring: 2px solid #3b82f6; }
-        .btn { width: 100%; padding: 0.75rem; background: #2563eb; color: white; border-radius: 0.5rem; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        .btn:hover { background: #1d4ed8; }
-        .main-title { background: linear-gradient(to right, #2563eb, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        body { background: url('<?= $config['site']['bg'] ?: "https://images.unsplash.com/photo-1607988795691-3d0147b43231?q=80&w=1920" ?>') no-repeat center center fixed; background-size: cover; }
+        .glass-card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 1rem; box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37); }
+        .input { width: 100%; padding: 0.7rem; border: 1px solid #e2e8f0; border-radius: 0.5rem; outline: none; background: rgba(255,255,255,0.8); transition: 0.2s; }
+        .input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); }
+        .btn-primary { background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; font-weight: bold; padding: 0.75rem; border-radius: 0.5rem; width: 100%; transition: transform 0.1s; }
+        .btn-primary:active { transform: scale(0.98); }
     </style>
 </head>
-<body>
+<body class="flex items-center justify-center min-h-screen p-4 text-gray-800">
+
     <?php if(isset($_GET['msg'])): ?>
-    <div class="fixed top-5 left-1/2 -translate-x-1/2 px-4 py-2 rounded shadow text-white text-sm font-bold z-50
-        <?= strpos($_GET['msg'],'ok')!==false?'bg-green-500':'bg-red-500' ?>">
-        <?= ['reg_ok'=>'🎉 注册成功！', 'reset_ok'=>'✅ 密码已重置', 'err_exists'=>'⚠️ 用户名已存在', 'err_captcha'=>'❌ 验证码错误'][$_GET['msg']] ?? '操作完成' ?>
+    <div class="fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-lg text-white font-bold z-50 animate-bounce <?= strpos($_GET['msg'],'ok')!==false?'bg-green-500':'bg-red-500' ?>">
+        <?= ['reg_ok'=>'🎉 注册成功！', 'err_pass'=>'🔒 密码错误', 'err_exists'=>'⚠️ 账号已存在', 'err_ip'=>'⛔ IP注册受限'][$_GET['msg']] ?? $_GET['msg'] ?>
     </div>
     <?php endif; ?>
 
-    <?php if ($action === 'home'): ?>
-    <div class="center-wrap"><div class="card">
-        <h1 class="text-3xl font-extrabold text-center mb-2 main-title"><?= htmlspecialchars($config['site']['title']) ?></h1>
-        <p class="text-center text-gray-400 text-sm mb-6">Create Account</p>
+    <?php if ($action === 'user_center' && isset($_SESSION['user'])): $user=$_SESSION['user']; $udata=getUserData($user['username']); ?>
+    <div class="glass-card w-full max-w-md p-8">
+        <div class="flex items-center gap-4 mb-6 pb-6 border-b border-gray-200">
+            <img src="https://cravatar.eu/helmavatar/<?=$user['realname']?>/64.png" class="w-16 h-16 rounded-xl shadow-md">
+            <div>
+                <h2 class="text-xl font-bold text-gray-800"><?=$user['realname']?></h2>
+                <div class="text-sm text-gray-500">已签到: <span class="font-bold text-blue-600"><?=$udata['sign_count']??0?></span> 天</div>
+            </div>
+            <a href="?action=do_logout" class="ml-auto text-xs text-red-500 hover:bg-red-50 px-3 py-2 rounded transition">退出</a>
+        </div>
+        <?php if($config['rewards']['daily_cmd']): ?>
+        <div class="bg-blue-50/50 p-4 rounded-xl mb-5 flex justify-between items-center border border-blue-100">
+            <div><div class="font-bold text-blue-800">每日福利</div><div class="text-xs text-blue-600">Daily Reward</div></div>
+            <button onclick="sign(this)" class="bg-blue-600 text-white px-5 py-2 rounded-lg font-bold shadow hover:bg-blue-700 transition"><?= ($udata['last_sign']??0)==date('Ymd') ? '已签到' : '签到' ?></button>
+        </div>
+        <?php endif; ?>
+        <div class="space-y-2">
+            <label class="text-xs font-bold text-gray-500 uppercase">CDK 兑换</label>
+            <div class="flex gap-2">
+                <input id="cdk" placeholder="输入礼包码..." class="input">
+                <button onclick="cdk()" class="bg-green-600 text-white px-5 rounded-lg font-bold shadow hover:bg-green-700 transition">兑换</button>
+            </div>
+        </div>
+        <div class="mt-8 text-center text-xs text-gray-400">RCON Connected</div>
+    </div>
+    <script>
+    function sign(b){ b.disabled=true; b.innerText='...'; fetch('?action=do_sign').then(r=>r.json()).then(d=>{ alert(d.m); if(d.s) b.innerText='已签到'; else b.disabled=false; }); }
+    function cdk(){ let c=document.getElementById('cdk').value; if(!c)return; fetch('?action=do_cdk',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'code='+c}).then(r=>r.json()).then(d=>{ alert(d.m); if(d.s)document.getElementById('cdk').value=''; }); }
+    </script>
+
+    <?php elseif ($action === 'login'): ?>
+    <div class="glass-card w-full max-w-sm p-8 text-center">
+        <h2 class="text-2xl font-extrabold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">玩家登录</h2>
+        <form action="?action=do_login" method="POST" class="space-y-4">
+            <input name="username" placeholder="游戏角色名" class="input" required>
+            <input type="password" name="password" placeholder="登录密码" class="input" required>
+            <button class="btn-primary">登 录</button>
+        </form>
+        <div class="mt-6 text-sm"><a href="?action=home" class="text-blue-600 hover:underline">没有账号？去注册</a></div>
+    </div>
+
+    <?php else: ?>
+    <div class="glass-card w-full max-w-sm p-8">
+        <h1 class="text-3xl font-extrabold text-center mb-6 text-gray-800 tracking-tight"><?= htmlspecialchars($config['site']['title']) ?></h1>
+        <?php if($config['server']['ip']): ?>
+        <div id="status" class="hidden bg-white/60 p-2 rounded-lg mb-4 flex items-center gap-3 border border-white/40">
+            <img id="icon" src="" class="w-10 h-10 rounded">
+            <div class="flex-1 min-w-0">
+                <div id="motd" class="text-xs text-gray-500 truncate">Loading...</div>
+                <div id="online" class="text-sm font-bold text-green-600">Checking...</div>
+            </div>
+        </div>
+        <script>
+            let ip="<?=$config['server']['ip']?>", port="<?=$config['server']['port']?>";
+            fetch(`https://api.mcsrvstat.us/2/${ip}:${port}`).then(r=>r.json()).then(d=>{
+                document.getElementById('status').classList.remove('hidden');
+                document.getElementById('icon').src = d.icon || `https://api.mcsrvstat.us/icon/${ip}`;
+                document.getElementById('online').innerText = d.online ? `🟢 ${d.players.online} 人在线` : '🔴 服务器离线';
+                if(d.online) document.getElementById('motd').innerText = d.motd.clean.join(' ');
+            });
+        </script>
+        <?php endif; ?>
         <form action="?action=do_reg" method="POST" class="space-y-3">
-            <input type="text" name="username" placeholder="游戏角色名" class="input" required>
-            <input type="email" name="email" placeholder="电子邮箱" class="input" required>
-            <input type="password" name="password" placeholder="密码" class="input" required>
-            <div class="flex gap-2"><input type="text" name="captcha" placeholder="验证码" class="input" required>
-            <img src="?action=captcha" onclick="this.src='?action=captcha&'+Math.random()" class="h-10 rounded border cursor-pointer"></div>
-            <button class="btn mt-2">立即注册</button>
+            <input name="username" placeholder="Minecraft 角色名" class="input" required>
+            <input name="email" type="email" placeholder="电子邮箱" class="input" required>
+            <input type="password" name="password" placeholder="设置密码" class="input" required>
+            <div class="flex gap-2">
+                <input name="captcha" placeholder="验证码" class="input" required>
+                <img src="?action=captcha" onclick="this.src='?action=captcha&'+Math.random()" class="h-11 rounded cursor-pointer border border-gray-200">
+            </div>
+            <button class="btn-primary mt-2">立即注册</button>
         </form>
-        <div class="mt-6 text-center text-sm"><a href="?action=forgot" class="text-gray-500 hover:text-blue-600">忘记密码</a></div>
-    </div></div>
-    
-    <?php elseif ($action === 'forgot'): ?>
-    <div class="center-wrap"><div class="card">
-        <h2 class="text-xl font-bold text-center mb-4">重置密码</h2>
-        <form action="?action=do_reset" method="POST" class="space-y-3">
-            <div class="flex gap-2"><input type="email" id="m" name="email" placeholder="邮箱" class="input w-full"><button type="button" onclick="sc(this)" class="bg-blue-100 text-blue-600 px-3 rounded text-xs font-bold whitespace-nowrap">发验证码</button></div>
-            <input type="text" name="code" placeholder="6位验证码" class="input">
-            <input type="password" name="password" placeholder="新密码" class="input">
-            <button class="btn">提交</button>
-        </form>
-        <div class="mt-4 text-center"><a href="?action=home" class="text-sm text-gray-500">返回</a></div>
-    </div></div><script>function sc(b){var m=document.getElementById('m').value;if(!m)return alert('填邮箱');b.disabled=true;b.innerText='...';fetch('?action=do_send_code',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'email='+m}).then(r=>r.json()).then(d=>{alert(d.msg);if(d.status=='ok'){var s=60,t=setInterval(()=>{b.innerText=s--;if(s<0){clearInterval(t);b.disabled=false;b.innerText='发送'}},1000)}else{b.disabled=false;b.innerText='发送'}})}</script>
+        <div class="mt-6 flex justify-between text-sm">
+            <a href="?action=login" class="text-blue-600 font-bold hover:underline">已有账号？登录</a>
+            <a href="#" onclick="alert('请联系腐竹重置密码')" class="text-gray-400 hover:text-gray-600">忘记密码?</a>
+        </div>
+    </div>
     <?php endif; ?>
 </body>
 </html>
