@@ -1,82 +1,129 @@
 <?php
 /**
- * Project: 流星MCS 标准版前台
- * Version: v1.8 (With Password Reset)
+ * Project: 流星MCS 后台管理
+ * Version: v1.8 (Fixed Version Display)
  */
-session_start();header('Content-Type: text/html; charset=utf-8');
+session_start();
 require_once 'core.php';
-if (basename($_SERVER['PHP_SELF']) == 'config.php' || defined('IN_ADMIN')) return;
-$A = $_GET['action'] ?? 'home';
+define('IN_ADMIN', true);
+$repoUrl = 'https://raw.githubusercontent.com/Huanyingcraft21/AuthMe-Web-Portal/main/';
 
-// Logic Handlers
-if ($A === 'do_login') { $u=strtolower(trim($_POST['u'])); $p=$_POST['p']; $stmt=$pdo->prepare("SELECT * FROM authme WHERE username=?"); $stmt->execute([$u]); if($r=$stmt->fetch()){ if(verifyAuthMe($p,$r['password'])){ $_SESSION['user']=$r; header("Location: ?action=user_center"); }else header("Location: ?action=login&msg=err_pass"); }else header("Location: ?action=login&msg=err_user"); exit; }
-if ($A === 'do_logout') { session_destroy(); header("Location: ?action=home"); exit; }
-if ($A === 'do_reg') { $u=strtolower(trim($_POST['u'])); $ip=$_SERVER['REMOTE_ADDR']; $pdo->prepare("INSERT INTO authme (username,realname,password,email,ip,regdate,lastlogin) VALUES (?,?,?,?,?,?,?)")->execute([$u,$_POST['u'],hashAuthMe($_POST['p']),$_POST['e'],$ip,time()*1000,time()*1000]); if($c=$config['rewards']['reg_cmd']) runRcon(str_replace('%player%',$_POST['u'],$c), 0); header("Location: ?msg=reg_ok"); exit; }
+if (!file_exists($configFile)) die("系统未安装");
+$action = $_GET['action'] ?? 'login';
 
-// Sign & CDK (Omitted for brevity, logic same as before)
-if ($A === 'do_sign') { /* ...Same as v1.7.5... */ exit; }
-if ($A === 'do_cdk') { /* ...Same as v1.7.5... */ exit; }
+// 登录拦截
+if (checkLock($limitFile) && $action === 'do_sys_login') die("<h1>🚫 IP Locked</h1>");
+if ($action === 'logout') { session_destroy(); header("Location: ?action=login"); exit; }
 
-// 🔥 Forgot Password Logic
-if ($A === 'do_fp_send') {
-    $u=strtolower(trim($_POST['u'])); $e=trim($_POST['e']);
-    $stmt=$pdo->prepare("SELECT id,email FROM authme WHERE username=?"); $stmt->execute([$u]); $r=$stmt->fetch();
-    if(!$r || $r['email']!==$e) { echo json_encode(['s'=>0,'m'=>'❌ 用户名和邮箱不匹配']); exit; }
-    $code=rand(100000,999999); $t=time();
-    $pdo->prepare("UPDATE authme SET reset_code=?, reset_time=? WHERE id=?")->execute([$code, $t, $r['id']]);
-    $smtp = new TinySMTP(); $smtp->send($e, "重置验证码", "Code: <b>$code</b> (10 min)", $config['smtp']);
-    echo json_encode(['s'=>1,'m'=>'✅ 验证码已发送']); exit;
+if ($action === 'do_sys_login') {
+    if ($_POST['user'] === $config['admin']['user'] && $_POST['pass'] === $config['admin']['pass']) {
+        clearFail($limitFile); $_SESSION['is_admin'] = true; header("Location: ?action=dashboard");
+    } else { $c = logFail($limitFile); header("Location: ?action=login&msg=err_auth&rem=".(3-$c)); } exit;
 }
-if ($A === 'do_fp_reset') {
-    $u=strtolower(trim($_POST['u'])); $c=trim($_POST['c']); $p=$_POST['p'];
-    $stmt=$pdo->prepare("SELECT id,reset_code,reset_time FROM authme WHERE username=?"); $stmt->execute([$u]); $r=$stmt->fetch();
-    if(!$r || $r['reset_code']!==$c) { echo json_encode(['s'=>0,'m'=>'❌ 验证码错误']); exit; }
-    if(time()-$r['reset_time']>600) { echo json_encode(['s'=>0,'m'=>'❌ 验证码已过期']); exit; }
-    $pdo->prepare("UPDATE authme SET password=?, reset_code=NULL WHERE id=?")->execute([hashAuthMe($p), $r['id']]);
-    echo json_encode(['s'=>1,'m'=>'🎉 密码修改成功']); exit;
+if ($action !== 'login' && $action !== 'do_sys_login' && !isset($_SESSION['is_admin'])) { header("Location: ?action=login"); exit; }
+
+// 业务逻辑
+if ($action === 'check_update') {
+    $remoteVer = @file_get_contents($repoUrl . 'version.txt');
+    if ($remoteVer === false) { echo json_encode(['status' => 'err', 'msg' => '连接 GitHub 失败']); }
+    else {
+        $remoteVer = trim($remoteVer); $currentVer = $config['site']['ver'];
+        // 🔥 修复：使用 version_compare 处理 1.7.5 > 1.7 的逻辑
+        if (version_compare($remoteVer, $currentVer, '>')) echo json_encode(['status' => 'new', 'ver' => $remoteVer, 'msg' => "发现新版本 v$remoteVer"]);
+        else echo json_encode(['status' => 'latest', 'msg' => '已是最新']);
+    } exit;
 }
-if ($A === 'captcha') { $c=rand(1000,9999);$_SESSION['captcha']=$c;$i=imagecreatetruecolor(60,34);imagefill($i,0,0,0x3b82f6);imagestring($i,5,12,9,$c,0xffffff);header("Content-type: image/png");imagepng($i);exit; }
+if ($action === 'do_update') {
+    $files = ['index.php', 'admin.php', 'core.php', 'install.php', 'lite.php']; $log=""; $ok=true;
+    foreach ($files as $f) {
+        $c = @file_get_contents($repoUrl . $f);
+        if ($c) { if(file_put_contents($f, $c)) $log.="✅ $f OK\n"; else { $ok=false; $log.="❌ $f Fail\n"; } }
+    }
+    // 合并配置并更新版本号
+    $sc = @file_get_contents($repoUrl . 'config_sample.php');
+    if ($sc) {
+        file_put_contents('ctmp.php', $sc); $tpl=include('ctmp.php'); $old=include('config.php'); unlink('ctmp.php');
+        $new = array_replace_recursive($tpl, $old);
+        // 获取远程版本号并写入配置
+        $ver = trim(@file_get_contents($repoUrl . 'version.txt'));
+        if($ver) $new['site']['ver'] = $ver; 
+        saveConfig($new); $log.="✅ Config & Version Updated ($ver)\n";
+    }
+    echo json_encode(['status' => $ok?'ok':'err', 'log' => $log]); exit;
+}
+// 其他保存逻辑保持 v1.7 不变...
+if ($action === 'do_rcon_cmd') { $res=runRcon($_POST['cmd'],(int)$_POST['server_id']); echo json_encode(['res'=>$res===false?"连接失败":($res?:"指令已发送")]); exit; }
+if ($action === 'do_save_settings') {
+    $new=$config; $new['site']['title']=$_POST['site_title']; $new['site']['bg']=$_POST['site_bg'];
+    // 强制保存 servers 数组
+    if(!empty($_POST['servers_json'])) $new['servers']=json_decode($_POST['servers_json'],true);
+    $new['rewards']['reg_cmd']=$_POST['reg_cmd']; $new['rewards']['daily_cmd']=$_POST['daily_cmd'];
+    $new['rewards']['sign_in_servers']=explode(',',$_POST['sign_in_servers']);
+    $new['display']['ip']=$_POST['display_ip']; $new['display']['port']=$_POST['display_port'];
+    // DB SMTP Admin...
+    $new['db']['host']=$_POST['db_host'];$new['db']['name']=$_POST['db_name'];$new['db']['user']=$_POST['db_user'];if($_POST['db_pass'])$new['db']['pass']=$_POST['db_pass'];
+    $new['smtp']['host']=$_POST['smtp_host'];$new['smtp']['port']=$_POST['smtp_port'];$new['smtp']['user']=$_POST['smtp_user'];if($_POST['smtp_pass'])$new['smtp']['pass']=$_POST['smtp_pass'];$new['smtp']['from_name']=$_POST['smtp_from'];
+    if($_POST['admin_pass']){$new['admin']['user']=$_POST['admin_user'];$new['admin']['pass']=$_POST['admin_pass'];}
+    saveConfig($new); header("Location: ?action=dashboard&tab=settings&msg=save_ok"); exit;
+}
+if ($action === 'add_cdk') { $d=getCdks(); $d[$_POST['code']]=['cmd'=>$_POST['cmd'],'max'=>(int)$_POST['usage'],'server_id'=>$_POST['server_id'],'used'=>0,'users'=>[]]; saveCdks($d); header("Location: ?action=dashboard&tab=cdk"); exit; }
+if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d); header("Location: ?action=dashboard&tab=cdk"); exit; }
 ?>
-<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title><?= htmlspecialchars($config['site']['title']) ?></title><script src="https://cdn.tailwindcss.com"></script><style>body{background:url('<?= $config['site']['bg'] ?>') center/cover fixed}.glass-card{background:rgba(255,255,255,0.95);backdrop-filter:blur(10px);border-radius:1rem;box-shadow:0 8px 32px rgba(0,0,0,0.2)}.input{width:100%;padding:0.7rem;border:1px solid #e2e8f0;border-radius:0.5rem;background:rgba(255,255,255,0.8)}.btn-primary{background:#2563eb;color:white;font-weight:bold;padding:0.75rem;border-radius:0.5rem;width:100%}.hidden{display:none}</style></head>
-<body class="flex items-center justify-center min-h-screen p-4 text-gray-800">
-
-<?php if(isset($_GET['msg'])): ?><div class="fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-lg text-white font-bold z-50 bg-blue-600"><?= $_GET['msg'] ?></div><?php endif; ?>
-
-<?php if ($A === 'user_center' && isset($_SESSION['user'])): $user=$_SESSION['user']; $udata=getUserData($user['username']); ?>
-    <div class="glass-card w-full max-w-md p-8">
-        <div class="flex items-center gap-4 mb-6 border-b pb-4"><img src="https://cravatar.eu/helmavatar/<?=$user['realname']?>/64.png" class="w-16 h-16 rounded-xl"><div><h2 class="text-xl font-bold"><?=$user['realname']?></h2><div class="text-xs text-gray-500">签到: <?=$udata['sign_count']??0?> 天</div></div><a href="?action=do_logout" class="ml-auto text-xs bg-red-100 text-red-600 px-3 py-2 rounded">退出</a></div>
-        </div>
-<?php else: ?>
-    <div class="glass-card w-full max-w-sm p-8 text-center relative">
-        <h1 class="text-2xl font-bold mb-6 text-blue-600"><?= htmlspecialchars($config['site']['title']) ?></h1>
-        
-        <div id="box-log">
-            <form action="?action=do_login" method="POST" class="space-y-4"><input name="u" placeholder="用户" class="input" required><input type="password" name="p" placeholder="密码" class="input" required><button class="btn-primary">登录</button></form>
-            <div class="mt-4 flex justify-between text-sm"><a href="#" onclick="show('box-reg')" class="text-blue-600 font-bold">注册</a><a href="#" onclick="show('box-fp')" class="text-gray-500 hover:text-gray-700">忘记密码?</a></div>
-        </div>
-
-        <div id="box-reg" class="hidden">
-            <form action="?action=do_reg" method="POST" class="space-y-3"><input name="u" placeholder="用户名" class="input" required><input name="e" placeholder="邮箱" class="input" required><input type="password" name="p" placeholder="密码" class="input" required><div class="flex gap-2"><input name="captcha" placeholder="验证码" class="input" required><img src="?action=captcha" onclick="this.src='?action=captcha&'+Math.random()" class="h-11 rounded border"></div><button class="btn-primary mt-2 bg-green-600">注册</button></form>
-            <p class="mt-4 text-sm"><a href="#" onclick="show('box-log')" class="text-blue-600 font-bold">返回登录</a></p>
-        </div>
-
-        <div id="box-fp" class="hidden">
-            <h3 class="font-bold text-gray-700 mb-4">重置密码</h3>
-            <div class="space-y-3 text-left">
-                <input id="fp_u" placeholder="用户名" class="input">
-                <div class="flex gap-2"><input id="fp_e" placeholder="邮箱" class="input"><button onclick="sendCode()" class="bg-gray-500 text-white px-3 rounded text-xs whitespace-nowrap">获取验证码</button></div>
-                <input id="fp_c" placeholder="验证码" class="input">
-                <input id="fp_p" type="password" placeholder="新密码" class="input">
-                <button onclick="doReset()" class="btn-primary bg-orange-500">确认重置</button>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width"><title>后台 v1.8</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>body{background:#f3f4f6} .input{width:100%;padding:0.5rem;border:1px solid #ddd;border-radius:0.3rem} .nav-btn{display:block;padding:0.6rem 1rem;margin-bottom:0.5rem;border-radius:0.5rem;font-weight:600;color:#4b5563} .nav-btn.active{background:#eff6ff;color:#2563eb}</style>
+</head>
+<body>
+    <?php if ($action === 'login'): ?>
+    <div class="flex items-center justify-center min-h-screen"><div class="bg-white p-8 rounded shadow-lg w-full max-w-sm"><h2 class="text-xl font-bold text-center mb-6">后台验证</h2><form action="?action=do_sys_login" method="POST" class="space-y-4"><input name="user" placeholder="账号" class="input" required><input type="password" name="pass" placeholder="密码" class="input" required><button class="w-full bg-gray-800 text-white p-2 rounded hover:bg-black">登录</button></form></div></div>
+    
+    <?php elseif ($action === 'dashboard'): $tab = $_GET['tab'] ?? 'users'; ?>
+    <div class="max-w-7xl mx-auto my-8 p-4">
+        <div class="bg-white rounded-xl shadow-lg overflow-hidden flex flex-col md:flex-row min-h-[700px]">
+            <div class="w-full md:w-56 bg-gray-50 p-6 border-r">
+                <div class="mb-8 font-extrabold text-2xl text-blue-600 px-2">流星MCS <span class="text-xs text-gray-400 block font-normal">v<?= htmlspecialchars($config['site']['ver']) ?></span></div>
+                <button onclick="checkUpdate()" id="u-btn" class="mb-4 text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded">检查更新</button>
+                <nav>
+                    <a href="?action=dashboard&tab=users" class="nav-btn <?= $tab=='users'?'active':'' ?>">👥 玩家管理</a>
+                    <a href="?action=dashboard&tab=console" class="nav-btn <?= $tab=='console'?'active':'' ?>">🖥️ RCON终端</a>
+                    <a href="?action=dashboard&tab=cdk" class="nav-btn <?= $tab=='cdk'?'active':'' ?>">🎁 CDK 管理</a>
+                    <a href="?action=dashboard&tab=settings" class="nav-btn <?= $tab=='settings'?'active':'' ?>">⚙️ 系统设置</a>
+                    <div class="pt-6 mt-6 border-t"><a href="?action=logout" class="nav-btn text-red-600">退出</a></div>
+                </nav>
             </div>
-            <p class="mt-4 text-sm"><a href="#" onclick="show('box-log')" class="text-blue-600 font-bold">返回登录</a></p>
+            <div class="flex-1 p-8 overflow-y-auto relative">
+                <div id="u-modal" class="hidden absolute inset-0 bg-white/90 z-50 flex items-center justify-center"><div class="bg-white border shadow-xl p-6 rounded text-center w-96"><h3 class="font-bold text-lg mb-2">发现新版本</h3><p id="u-ver" class="text-blue-600 mb-4 font-mono"></p><div class="flex gap-2 justify-center"><button onclick="doUp()" class="bg-green-600 text-white px-4 py-2 rounded">更新</button><button onclick="document.getElementById('u-modal').classList.add('hidden')" class="bg-gray-200 px-4 py-2 rounded">取消</button></div></div></div>
+
+                <?php if ($tab === 'users'): ?>
+                    <table class="w-full text-sm text-left"><tr class="bg-gray-100"><th>ID</th><th>玩家</th><th>邮箱</th></tr><?php if($pdo): foreach($pdo->query("SELECT * FROM authme ORDER BY id DESC LIMIT 20") as $r): ?><tr class="border-b"><td class="p-3"><?=$r['id']?></td><td class="p-3"><?=$r['realname']?></td><td class="p-3"><?=$r['email']?></td></tr><?php endforeach; endif; ?></table>
+                <?php elseif ($tab === 'console'): ?>
+                    <div class="flex gap-2 mb-2"><select id="cs" class="input w-48"><?php foreach($config['servers'] as $k=>$v)echo"<option value='$k'>{$v['name']}</option>"?></select><input id="cc" class="input flex-1" placeholder="Command..."><button onclick="sc()" class="bg-black text-white px-4 rounded">Send</button></div><textarea id="cl" class="w-full h-96 bg-gray-900 text-green-400 p-4 rounded text-xs font-mono" readonly></textarea><script>function sc(){let c=document.getElementById('cc').value,s=document.getElementById('cs').value,l=document.getElementById('cl');if(!c)return;l.value+=`> ${c}\n`;fetch('?action=do_rcon_cmd',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:`cmd=${c}&server_id=${s}`}).then(r=>r.json()).then(d=>{l.value+=d.res+"\n\n";l.scrollTop=l.scrollHeight});document.getElementById('cc').value=''}</script>
+                <?php elseif ($tab === 'cdk'): ?>
+                    <form action="?action=add_cdk" method="POST" class="bg-blue-50 p-4 rounded mb-4 flex gap-2"><input name="code" placeholder="Code" class="input w-32"><input name="cmd" placeholder="Cmd" class="input flex-1"><input name="usage" value="1" class="input w-16"><select name="server_id" class="input w-24"><option value="all">All</option><?php foreach($config['servers'] as $k=>$v)echo"<option value='$k'>{$v['name']}</option>"?></select><button class="bg-blue-600 text-white px-4 rounded">Add</button></form>
+                    <table class="w-full text-sm text-left"><tr class="bg-gray-100"><th>Code</th><th>Cmd</th><th>Srv</th><th>Use</th><th>Op</th></tr><?php foreach(getCdks() as $k=>$d): ?><tr class="border-b"><td class="p-3 font-bold"><?=$k?></td><td class="p-3 text-xs"><?=$d['cmd']?></td><td class="p-3 text-xs"><?=$d['server_id']=='all'?'All':$config['servers'][$d['server_id']]['name']?></td><td class="p-3"><?=($d['max']-$d['used'])?></td><td class="p-3"><a href="?action=del_cdk&code=<?=$k?>" class="text-red-500">Del</a></td></tr><?php endforeach; ?></table>
+                <?php elseif ($tab === 'settings'): ?>
+                    <form action="?action=do_save_settings" method="POST" class="space-y-4 max-w-2xl">
+                        <div class="grid grid-cols-2 gap-4"><div><label class="text-xs font-bold">标题</label><input name="site_title" value="<?=$config['site']['title']?>" class="input"></div><div><label class="text-xs font-bold">背景</label><input name="site_bg" value="<?=$config['site']['bg']?>" class="input"></div></div>
+                        <div class="grid grid-cols-2 gap-4"><div><label class="text-xs font-bold">前端IP</label><input name="display_ip" value="<?=$config['display']['ip']?>" class="input"></div><div><label class="text-xs font-bold">前端端口</label><input name="display_port" value="<?=$config['display']['port']?>" class="input"></div></div>
+                        <div><label class="text-xs font-bold">后端服务器 (JSON)</label><textarea name="servers_json" class="input h-24 font-mono text-xs"><?=json_encode($config['servers'])?></textarea></div>
+                        <div class="grid grid-cols-2 gap-4"><div><label class="text-xs font-bold">注册指令</label><input name="reg_cmd" value="<?=$config['rewards']['reg_cmd']?>" class="input"></div><div><label class="text-xs font-bold">签到指令</label><input name="daily_cmd" value="<?=$config['rewards']['daily_cmd']?>" class="input"></div></div>
+                        <div><label class="text-xs font-bold">签到生效服ID (逗号隔开)</label><input name="sign_in_servers" value="<?=implode(',',$config['rewards']['sign_in_servers'])?>" class="input"></div>
+                        <div class="p-2 bg-gray-100 text-center text-xs text-gray-400">DB/SMTP Hidden</div>
+                        <input type="hidden" name="db_host" value="<?=$config['db']['host']?>"><input type="hidden" name="db_name" value="<?=$config['db']['name']?>"><input type="hidden" name="db_user" value="<?=$config['db']['user']?>"><input type="hidden" name="db_pass" value="<?=$config['db']['pass']?>">
+                        <input type="hidden" name="smtp_host" value="<?=$config['smtp']['host']?>"><input type="hidden" name="smtp_port" value="<?=$config['smtp']['port']?>"><input type="hidden" name="smtp_user" value="<?=$config['smtp']['user']?>"><input type="hidden" name="smtp_pass" value="<?=$config['smtp']['pass']?>"><input type="hidden" name="smtp_from" value="<?=$config['smtp']['from_name']?>">
+                        <button class="bg-green-600 text-white px-6 py-2 rounded font-bold">保存</button>
+                    </form>
+                <?php endif; ?>
+            </div>
         </div>
     </div>
-<?php endif; ?>
-
-<script>
-function show(id){['box-log','box-reg','box-fp'].forEach(x=>document.getElementById(x).classList.add('hidden'));document.getElementById(id).classList.remove('hidden')}
-function sendCode(){let u=document.getElementById('fp_u').value,e=document.getElementById('fp_e').value;if(!u||!e)return alert('缺信息');fetch('?action=do_fp_send',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:`u=${u}&e=${e}`}).then(r=>r.json()).then(d=>alert(d.m))}
-function doReset(){let u=document.getElementById('fp_u').value,c=document.getElementById('fp_c').value,p=document.getElementById('fp_p').value;if(!c||!p)return alert('缺信息');fetch('?action=do_fp_reset',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:`u=${u}&c=${c}&p=${p}`}).then(r=>r.json()).then(d=>{alert(d.m);if(d.s)show('box-log')})}
-</script>
-</body></html>
+    <script>
+    function checkUpdate(){let b=document.getElementById('u-btn');b.innerText='...';fetch('?action=check_update').then(r=>r.json()).then(d=>{b.innerText='检查更新';if(d.status=='new'){document.getElementById('u-ver').innerText=d.ver;document.getElementById('u-modal').classList.remove('hidden')}else alert(d.msg)})}
+    function doUp(){fetch('?action=do_update').then(r=>r.json()).then(d=>{alert(d.log);location.reload()})}
+    </script>
+    <?php endif; ?>
+</body>
+</html>
