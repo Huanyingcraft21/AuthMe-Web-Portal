@@ -1,7 +1,7 @@
 <?php
 /**
  * Project: 流星MCS Core
- * Version: v1.7.5 (Proxy Ready)
+ * Version: v1.7.5 (Proxy Ready + Patched)
  */
 error_reporting(0);
 $configFile = 'config.php';
@@ -14,9 +14,7 @@ if (file_exists($configFile)) {
         'smtp' => ['host'=>'smtp.qq.com', 'port'=>465, 'user'=>'', 'pass'=>'', 'secure'=>'ssl', 'from_name'=>'流星MCS'],
         'admin' => ['user'=>'admin', 'pass'=>'password123', 'email'=>''],
         'site' => ['title'=>'流星MCS', 'ver'=>'1.7.5', 'bg'=>''],
-        // [v1.7.5 新增] 专门用于前端展示状态的公开IP (代理端IP)
         'display' => ['ip'=>'', 'port'=>'25565'], 
-        // RCON 连接的后端服务器列表
         'servers' => [['name'=>'Default', 'ip'=>'127.0.0.1', 'port'=>25565, 'rcon_port'=>25575, 'rcon_pass'=>'']],
         'rewards' => ['reg_cmd'=>'', 'daily_cmd'=>'']
     ];
@@ -24,7 +22,7 @@ if (file_exists($configFile)) {
     $config = isset($loaded['host']) ? array_replace_recursive($defaultConfig, ['db'=>$loaded]) : array_replace_recursive($defaultConfig, $loaded);
 }
 
-// 兼容性修正：如果 config 还没更新 display 节点，默认用第一个服务器的 IP
+// 兼容性修正
 if (empty($config['display']['ip']) && !empty($config['servers'][0]['ip'])) {
     $config['display']['ip'] = $config['servers'][0]['ip'];
     $config['display']['port'] = $config['servers'][0]['port'];
@@ -42,7 +40,8 @@ if (!empty($config['db']['name'])) {
 // Utils
 function saveConfig($newConfig) { global $configFile; return file_put_contents($configFile, "<?php\nreturn " . var_export($newConfig, true) . ";"); }
 function hashAuthMe($p) { $s = bin2hex(random_bytes(8)); return "\$SHA\$" . $s . "\$" . hash('sha256', hash('sha256', $p) . $s); }
-function verifyAuthMe($p, $hash) { $p=explode('$', $hash); if(count($p)===4&&$p[1]==='SHA') return hash('sha256',hash('sha256',$p[0]).$p[2])===$p[3]; return false; }
+// 修复：更改变量名为 $parts，防止覆写 $p 导致任何密码比对全为 false
+function verifyAuthMe($p, $hash) { $parts=explode('$', $hash); if(count($parts)===4&&$parts[1]==='SHA') return hash('sha256',hash('sha256',$p).$parts[2])===$parts[3]; return false; }
 
 // RCON
 class TinyRcon {
@@ -76,12 +75,12 @@ class TinySMTP {
     private function cmd($c){ if($c)fwrite($this->sock,$c."\r\n"); while($s=fgets($this->sock,515)){if(substr($s,3,1)==" ")break;} }
 }
 
-// Data Handling
+// Data Handling (修复：加入 LOCK_EX 防止高并发文件损坏)
 $userDataFile='user_data.json'; $cdkFile='cdk_data.json';
 function getUserData($u){ global $userDataFile; $d=file_exists($userDataFile)?json_decode(file_get_contents($userDataFile),true):[]; return $d[$u]??[]; }
-function setUserData($u,$k,$v){ global $userDataFile; $d=file_exists($userDataFile)?json_decode(file_get_contents($userDataFile),true):[]; $d[$u][$k]=$v; file_put_contents($userDataFile,json_encode($d)); }
+function setUserData($u,$k,$v){ global $userDataFile; $d=file_exists($userDataFile)?json_decode(file_get_contents($userDataFile),true):[]; $d[$u][$k]=$v; file_put_contents($userDataFile,json_encode($d), LOCK_EX); }
 function getCdks(){ global $cdkFile; return file_exists($cdkFile)?json_decode(file_get_contents($cdkFile),true):[]; }
-if(!function_exists('saveCdks')){ function saveCdks($d){ global $cdkFile; file_put_contents($cdkFile,json_encode($d)); } }
+if(!function_exists('saveCdks')){ function saveCdks($d){ global $cdkFile; file_put_contents($cdkFile,json_encode($d), LOCK_EX); } }
 if(!function_exists('updateCdk')){ function updateCdk($c,$d){ $all=getCdks(); $all[$c]=$d; saveCdks($all); } }
 
 // Security
