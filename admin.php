@@ -1,7 +1,7 @@
 <?php
 /**
  * Project: 流星MCS 后台管理
- * Version: v1.8 (Fixed Version Display)
+ * Version: v1.8 (Patched)
  */
 session_start();
 require_once 'core.php';
@@ -11,7 +11,6 @@ $repoUrl = 'https://raw.githubusercontent.com/Huanyingcraft21/AuthMe-Web-Portal/
 if (!file_exists($configFile)) die("系统未安装");
 $action = $_GET['action'] ?? 'login';
 
-// 登录拦截
 if (checkLock($limitFile) && $action === 'do_sys_login') die("<h1>🚫 IP Locked</h1>");
 if ($action === 'logout') { session_destroy(); header("Location: ?action=login"); exit; }
 
@@ -22,13 +21,11 @@ if ($action === 'do_sys_login') {
 }
 if ($action !== 'login' && $action !== 'do_sys_login' && !isset($_SESSION['is_admin'])) { header("Location: ?action=login"); exit; }
 
-// 业务逻辑
 if ($action === 'check_update') {
     $remoteVer = @file_get_contents($repoUrl . 'version.txt');
     if ($remoteVer === false) { echo json_encode(['status' => 'err', 'msg' => '连接 GitHub 失败']); }
     else {
         $remoteVer = trim($remoteVer); $currentVer = $config['site']['ver'];
-        // 🔥 修复：使用 version_compare 处理 1.7.5 > 1.7 的逻辑
         if (version_compare($remoteVer, $currentVer, '>')) echo json_encode(['status' => 'new', 'ver' => $remoteVer, 'msg' => "发现新版本 v$remoteVer"]);
         else echo json_encode(['status' => 'latest', 'msg' => '已是最新']);
     } exit;
@@ -39,31 +36,49 @@ if ($action === 'do_update') {
         $c = @file_get_contents($repoUrl . $f);
         if ($c) { if(file_put_contents($f, $c)) $log.="✅ $f OK\n"; else { $ok=false; $log.="❌ $f Fail\n"; } }
     }
-    // 合并配置并更新版本号
     $sc = @file_get_contents($repoUrl . 'config_sample.php');
     if ($sc) {
         file_put_contents('ctmp.php', $sc); $tpl=include('ctmp.php'); $old=include('config.php'); unlink('ctmp.php');
         $new = array_replace_recursive($tpl, $old);
-        // 获取远程版本号并写入配置
         $ver = trim(@file_get_contents($repoUrl . 'version.txt'));
         if($ver) $new['site']['ver'] = $ver; 
         saveConfig($new); $log.="✅ Config & Version Updated ($ver)\n";
     }
     echo json_encode(['status' => $ok?'ok':'err', 'log' => $log]); exit;
 }
-// 其他保存逻辑保持 v1.7 不变...
+
 if ($action === 'do_rcon_cmd') { $res=runRcon($_POST['cmd'],(int)$_POST['server_id']); echo json_encode(['res'=>$res===false?"连接失败":($res?:"指令已发送")]); exit; }
+
+// 修复：JSON 防爆与全配置支持
 if ($action === 'do_save_settings') {
     $new=$config; $new['site']['title']=$_POST['site_title']; $new['site']['bg']=$_POST['site_bg'];
-    // 强制保存 servers 数组
-    if(!empty($_POST['servers_json'])) $new['servers']=json_decode($_POST['servers_json'],true);
+    
+    if(!empty($_POST['servers_json'])) { 
+        $parsed = json_decode($_POST['servers_json'], true); 
+        if(is_array($parsed)) $new['servers'] = $parsed; 
+    }
+    
     $new['rewards']['reg_cmd']=$_POST['reg_cmd']; $new['rewards']['daily_cmd']=$_POST['daily_cmd'];
     $new['rewards']['sign_in_servers']=explode(',',$_POST['sign_in_servers']);
     $new['display']['ip']=$_POST['display_ip']; $new['display']['port']=$_POST['display_port'];
-    // DB SMTP Admin...
-    $new['db']['host']=$_POST['db_host'];$new['db']['name']=$_POST['db_name'];$new['db']['user']=$_POST['db_user'];if($_POST['db_pass'])$new['db']['pass']=$_POST['db_pass'];
-    $new['smtp']['host']=$_POST['smtp_host'];$new['smtp']['port']=$_POST['smtp_port'];$new['smtp']['user']=$_POST['smtp_user'];if($_POST['smtp_pass'])$new['smtp']['pass']=$_POST['smtp_pass'];$new['smtp']['from_name']=$_POST['smtp_from'];
-    if($_POST['admin_pass']){$new['admin']['user']=$_POST['admin_user'];$new['admin']['pass']=$_POST['admin_pass'];}
+    
+    $new['db']['host']=$_POST['db_host']; $new['db']['name']=$_POST['db_name']; $new['db']['user']=$_POST['db_user']; 
+    if(!empty($_POST['db_pass'])) $new['db']['pass']=$_POST['db_pass'];
+    
+    $new['smtp']['host']=$_POST['smtp_host']; $new['smtp']['port']=$_POST['smtp_port']; $new['smtp']['user']=$_POST['smtp_user']; $new['smtp']['from_name']=$_POST['smtp_from'];
+    if(!empty($_POST['smtp_pass'])) $new['smtp']['pass']=$_POST['smtp_pass'];
+    if(isset($_POST['smtp_secure'])) $new['smtp']['secure']=$_POST['smtp_secure'];
+    
+    $new['admin']['user']=$_POST['admin_user'];
+    if(!empty($_POST['admin_pass'])) $new['admin']['pass']=$_POST['admin_pass'];
+    if(isset($_POST['admin_email'])) $new['admin']['email']=$_POST['admin_email'];
+    
+    if(isset($_POST['server_ip'])) $new['server']['ip']=$_POST['server_ip'];
+    if(isset($_POST['server_port'])) $new['server']['port']=$_POST['server_port'];
+    if(isset($_POST['rcon_host'])) $new['rcon']['host']=$_POST['rcon_host'];
+    if(isset($_POST['rcon_port'])) $new['rcon']['port']=$_POST['rcon_port'];
+    if(!empty($_POST['rcon_pass'])) $new['rcon']['pass']=$_POST['rcon_pass'];
+    
     saveConfig($new); header("Location: ?action=dashboard&tab=settings&msg=save_ok"); exit;
 }
 if ($action === 'add_cdk') { $d=getCdks(); $d[$_POST['code']]=['cmd'=>$_POST['cmd'],'max'=>(int)$_POST['usage'],'server_id'=>$_POST['server_id'],'used'=>0,'users'=>[]]; saveCdks($d); header("Location: ?action=dashboard&tab=cdk"); exit; }
@@ -98,23 +113,60 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
                 <div id="u-modal" class="hidden absolute inset-0 bg-white/90 z-50 flex items-center justify-center"><div class="bg-white border shadow-xl p-6 rounded text-center w-96"><h3 class="font-bold text-lg mb-2">发现新版本</h3><p id="u-ver" class="text-blue-600 mb-4 font-mono"></p><div class="flex gap-2 justify-center"><button onclick="doUp()" class="bg-green-600 text-white px-4 py-2 rounded">更新</button><button onclick="document.getElementById('u-modal').classList.add('hidden')" class="bg-gray-200 px-4 py-2 rounded">取消</button></div></div></div>
 
                 <?php if ($tab === 'users'): ?>
-                    <table class="w-full text-sm text-left"><tr class="bg-gray-100"><th>ID</th><th>玩家</th><th>邮箱</th></tr><?php if($pdo): foreach($pdo->query("SELECT * FROM authme ORDER BY id DESC LIMIT 20") as $r): ?><tr class="border-b"><td class="p-3"><?=$r['id']?></td><td class="p-3"><?=$r['realname']?></td><td class="p-3"><?=$r['email']?></td></tr><?php endforeach; endif; ?></table>
+                    <table class="w-full text-sm text-left"><tr class="bg-gray-100"><th>ID</th><th>玩家</th><th>邮箱</th></tr><?php if($pdo): foreach($pdo->query("SELECT * FROM authme ORDER BY id DESC LIMIT 20") as $r): ?><tr class="border-b"><td class="p-3"><?=$r['id']?></td><td class="p-3"><?=htmlspecialchars($r['realname'])?></td><td class="p-3"><?=htmlspecialchars($r['email'])?></td></tr><?php endforeach; endif; ?></table>
                 <?php elseif ($tab === 'console'): ?>
                     <div class="flex gap-2 mb-2"><select id="cs" class="input w-48"><?php foreach($config['servers'] as $k=>$v)echo"<option value='$k'>{$v['name']}</option>"?></select><input id="cc" class="input flex-1" placeholder="Command..."><button onclick="sc()" class="bg-black text-white px-4 rounded">Send</button></div><textarea id="cl" class="w-full h-96 bg-gray-900 text-green-400 p-4 rounded text-xs font-mono" readonly></textarea><script>function sc(){let c=document.getElementById('cc').value,s=document.getElementById('cs').value,l=document.getElementById('cl');if(!c)return;l.value+=`> ${c}\n`;fetch('?action=do_rcon_cmd',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:`cmd=${c}&server_id=${s}`}).then(r=>r.json()).then(d=>{l.value+=d.res+"\n\n";l.scrollTop=l.scrollHeight});document.getElementById('cc').value=''}</script>
                 <?php elseif ($tab === 'cdk'): ?>
                     <form action="?action=add_cdk" method="POST" class="bg-blue-50 p-4 rounded mb-4 flex gap-2"><input name="code" placeholder="Code" class="input w-32"><input name="cmd" placeholder="Cmd" class="input flex-1"><input name="usage" value="1" class="input w-16"><select name="server_id" class="input w-24"><option value="all">All</option><?php foreach($config['servers'] as $k=>$v)echo"<option value='$k'>{$v['name']}</option>"?></select><button class="bg-blue-600 text-white px-4 rounded">Add</button></form>
-                    <table class="w-full text-sm text-left"><tr class="bg-gray-100"><th>Code</th><th>Cmd</th><th>Srv</th><th>Use</th><th>Op</th></tr><?php foreach(getCdks() as $k=>$d): ?><tr class="border-b"><td class="p-3 font-bold"><?=$k?></td><td class="p-3 text-xs"><?=$d['cmd']?></td><td class="p-3 text-xs"><?=$d['server_id']=='all'?'All':$config['servers'][$d['server_id']]['name']?></td><td class="p-3"><?=($d['max']-$d['used'])?></td><td class="p-3"><a href="?action=del_cdk&code=<?=$k?>" class="text-red-500">Del</a></td></tr><?php endforeach; ?></table>
+                    <table class="w-full text-sm text-left"><tr class="bg-gray-100"><th>Code</th><th>Cmd</th><th>Srv</th><th>Use</th><th>Op</th></tr><?php foreach(getCdks() as $k=>$d): ?><tr class="border-b"><td class="p-3 font-bold"><?=htmlspecialchars($k)?></td><td class="p-3 text-xs"><?=htmlspecialchars($d['cmd'])?></td><td class="p-3 text-xs"><?=$d['server_id']=='all'?'All':$config['servers'][$d['server_id']]['name']?></td><td class="p-3"><?=($d['max']-$d['used'])?></td><td class="p-3"><a href="?action=del_cdk&code=<?=urlencode($k)?>" class="text-red-500">Del</a></td></tr><?php endforeach; ?></table>
                 <?php elseif ($tab === 'settings'): ?>
-                    <form action="?action=do_save_settings" method="POST" class="space-y-4 max-w-2xl">
-                        <div class="grid grid-cols-2 gap-4"><div><label class="text-xs font-bold">标题</label><input name="site_title" value="<?=$config['site']['title']?>" class="input"></div><div><label class="text-xs font-bold">背景</label><input name="site_bg" value="<?=$config['site']['bg']?>" class="input"></div></div>
+                    <form action="?action=do_save_settings" method="POST" class="space-y-4 max-w-2xl pb-8">
+                        <div class="mt-4 mb-2 p-2 bg-blue-100 text-blue-800 font-bold rounded">基本设置</div>
+                        <div class="grid grid-cols-2 gap-4"><div><label class="text-xs font-bold">标题</label><input name="site_title" value="<?=$config['site']['title']?>" class="input"></div><div><label class="text-xs font-bold">背景链接</label><input name="site_bg" value="<?=$config['site']['bg']?>" class="input"></div></div>
                         <div class="grid grid-cols-2 gap-4"><div><label class="text-xs font-bold">前端IP</label><input name="display_ip" value="<?=$config['display']['ip']?>" class="input"></div><div><label class="text-xs font-bold">前端端口</label><input name="display_port" value="<?=$config['display']['port']?>" class="input"></div></div>
-                        <div><label class="text-xs font-bold">后端服务器 (JSON)</label><textarea name="servers_json" class="input h-24 font-mono text-xs"><?=json_encode($config['servers'])?></textarea></div>
+                        
+                        <div class="mt-4 mb-2 p-2 bg-blue-100 text-blue-800 font-bold rounded">奖励策略</div>
                         <div class="grid grid-cols-2 gap-4"><div><label class="text-xs font-bold">注册指令</label><input name="reg_cmd" value="<?=$config['rewards']['reg_cmd']?>" class="input"></div><div><label class="text-xs font-bold">签到指令</label><input name="daily_cmd" value="<?=$config['rewards']['daily_cmd']?>" class="input"></div></div>
                         <div><label class="text-xs font-bold">签到生效服ID (逗号隔开)</label><input name="sign_in_servers" value="<?=implode(',',$config['rewards']['sign_in_servers'])?>" class="input"></div>
-                        <div class="p-2 bg-gray-100 text-center text-xs text-gray-400">DB/SMTP Hidden</div>
-                        <input type="hidden" name="db_host" value="<?=$config['db']['host']?>"><input type="hidden" name="db_name" value="<?=$config['db']['name']?>"><input type="hidden" name="db_user" value="<?=$config['db']['user']?>"><input type="hidden" name="db_pass" value="<?=$config['db']['pass']?>">
-                        <input type="hidden" name="smtp_host" value="<?=$config['smtp']['host']?>"><input type="hidden" name="smtp_port" value="<?=$config['smtp']['port']?>"><input type="hidden" name="smtp_user" value="<?=$config['smtp']['user']?>"><input type="hidden" name="smtp_pass" value="<?=$config['smtp']['pass']?>"><input type="hidden" name="smtp_from" value="<?=$config['smtp']['from_name']?>">
-                        <button class="bg-green-600 text-white px-6 py-2 rounded font-bold">保存</button>
+                        
+                        <div class="mt-4 mb-2 p-2 bg-blue-100 text-blue-800 font-bold rounded">多服务器群组 (JSON)</div>
+                        <div><label class="text-xs font-bold">多服后端 RCON 列表</label><textarea name="servers_json" class="input h-24 font-mono text-xs"><?=json_encode($config['servers'])?></textarea></div>
+
+                        <div class="mt-4 mb-2 p-2 bg-blue-100 text-blue-800 font-bold rounded">数据库连接 (AuthMe)</div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div><label class="text-xs font-bold">DB Host</label><input name="db_host" value="<?=$config['db']['host']?>" class="input"></div>
+                            <div><label class="text-xs font-bold">DB Name</label><input name="db_name" value="<?=$config['db']['name']?>" class="input"></div>
+                            <div><label class="text-xs font-bold">DB User</label><input name="db_user" value="<?=$config['db']['user']?>" class="input"></div>
+                            <div><label class="text-xs font-bold">DB Pass (留空不修改)</label><input type="password" name="db_pass" placeholder="***" class="input"></div>
+                        </div>
+
+                        <div class="mt-4 mb-2 p-2 bg-blue-100 text-blue-800 font-bold rounded">邮件推送 (SMTP)</div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div><label class="text-xs font-bold">SMTP Host</label><input name="smtp_host" value="<?=$config['smtp']['host']?>" class="input"></div>
+                            <div><label class="text-xs font-bold">SMTP Port</label><input name="smtp_port" value="<?=$config['smtp']['port']?>" class="input"></div>
+                            <div><label class="text-xs font-bold">SMTP User</label><input name="smtp_user" value="<?=$config['smtp']['user']?>" class="input"></div>
+                            <div><label class="text-xs font-bold">SMTP Pass (留空不修改)</label><input type="password" name="smtp_pass" placeholder="***" class="input"></div>
+                            <div><label class="text-xs font-bold">发件人名称</label><input name="smtp_from" value="<?=$config['smtp']['from_name']?>" class="input"></div>
+                            <div><label class="text-xs font-bold">加密方式 (ssl/tls)</label><input name="smtp_secure" value="<?=$config['smtp']['secure'] ?? 'ssl'?>" class="input"></div>
+                        </div>
+
+                        <div class="mt-4 mb-2 p-2 bg-blue-100 text-blue-800 font-bold rounded">管理员与全局设置</div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div><label class="text-xs font-bold">管理员账号</label><input name="admin_user" value="<?=$config['admin']['user']?>" class="input"></div>
+                            <div><label class="text-xs font-bold">管理员密码 (留空不修改)</label><input type="password" name="admin_pass" placeholder="***" class="input"></div>
+                            <div class="col-span-2"><label class="text-xs font-bold">管理员邮箱</label><input name="admin_email" value="<?=$config['admin']['email'] ?? ''?>" class="input"></div>
+                        </div>
+                        
+                        <div class="mt-4 mb-2 p-2 bg-blue-100 text-blue-800 font-bold rounded">单服模式备用选项 (Server/Rcon)</div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div><label class="text-xs font-bold">单服 IP</label><input name="server_ip" value="<?=$config['server']['ip'] ?? ''?>" class="input"></div>
+                            <div><label class="text-xs font-bold">单服 Port</label><input name="server_port" value="<?=$config['server']['port'] ?? '25565'?>" class="input"></div>
+                            <div><label class="text-xs font-bold">单服 RCON Host</label><input name="rcon_host" value="<?=$config['rcon']['host'] ?? ''?>" class="input"></div>
+                            <div><label class="text-xs font-bold">单服 RCON Port</label><input name="rcon_port" value="<?=$config['rcon']['port'] ?? '25575'?>" class="input"></div>
+                            <div class="col-span-2"><label class="text-xs font-bold">单服 RCON Pass (留空不修改)</label><input type="password" name="rcon_pass" placeholder="***" class="input"></div>
+                        </div>
+
+                        <button class="w-full bg-green-600 text-white px-6 py-3 mt-4 rounded font-bold hover:bg-green-700 transition shadow">保存所有设置</button>
                     </form>
                 <?php endif; ?>
             </div>
