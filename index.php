@@ -1,19 +1,14 @@
 <?php
 /**
  * Project: 流星MCS 标准版前台
- * Version: v1.8 (Final Release)
- * Note: 包含找回密码、多服支持、独立IP显示
+ * Version: v1.8 (Patched)
  */
 session_start();
 header('Content-Type: text/html; charset=utf-8');
-require_once 'core.php'; // 依赖核心库
+require_once 'core.php'; 
 
-// 防止直接访问配置或被后台包含干扰
 if (basename($_SERVER['PHP_SELF']) == 'config.php' || defined('IN_ADMIN')) return;
-
 $A = $_GET['action'] ?? 'home';
-
-// --- 逻辑处理 ---
 
 // 1. 登录
 if ($A === 'do_login') {
@@ -30,43 +25,31 @@ if ($A === 'do_login') {
 }
 
 // 2. 退出
-if ($A === 'do_logout') {
-    session_destroy();
-    header("Location: ?action=home");
-    exit;
-}
+if ($A === 'do_logout') { session_destroy(); header("Location: ?action=home"); exit; }
 
-// 3. 注册
+// 3. 注册 (修复：查重崩溃 & 验证码绕过)
 if ($A === 'do_reg') {
-    if ($_POST['captcha'] != $_SESSION['captcha']) { header("Location: ?msg=err_captcha"); exit; }
+    if (empty($_SESSION['captcha']) || $_POST['captcha'] != $_SESSION['captcha']) { header("Location: ?msg=err_captcha"); exit; }
     $u = strtolower(trim($_POST['username'])); $ip = $_SERVER['REMOTE_ADDR'];
     
-    // 查重
-    if ($pdo->prepare("SELECT id FROM authme WHERE username=?")->execute([$u]) && $pdo->prepare("SELECT id FROM authme WHERE username=?")->fetch()) { header("Location: ?msg=err_exists"); exit; }
+    $stmt = $pdo->prepare("SELECT id FROM authme WHERE username=?");
+    $stmt->execute([$u]);
+    if ($stmt->fetch()) { header("Location: ?msg=err_exists"); exit; }
     
-    // 写入
     $pdo->prepare("INSERT INTO authme (username,realname,password,email,ip,regdate,lastlogin) VALUES (?,?,?,?,?,?,?)")
         ->execute([$u, $_POST['username'], hashAuthMe($_POST['password']), $_POST['email'], $ip, time()*1000, time()*1000]);
     
-    // RCON 奖励 (默认发给 ID:0)
-    if (!empty($config['rewards']['reg_cmd'])) {
-        runRcon(str_replace('%player%', $_POST['username'], $config['rewards']['reg_cmd']), 0);
-    }
-    
-    // 邮件
-    $smtp = new TinySMTP();
-    $smtp->send($_POST['email'], "欢迎加入", "恭喜注册成功！", $config['smtp']);
-    
+    if (!empty($config['rewards']['reg_cmd'])) { runRcon(str_replace('%player%', $_POST['username'], $config['rewards']['reg_cmd']), 0); }
+    $smtp = new TinySMTP(); $smtp->send($_POST['email'], "欢迎加入", "恭喜注册成功！", $config['smtp']);
     header("Location: ?msg=reg_ok"); exit;
 }
 
-// 4. 每日签到 (多服)
+// 4. 每日签到
 if ($A === 'do_sign' && isset($_SESSION['user'])) {
     $u = $_SESSION['user']['username']; $d = getUserData($u); $today = date('Ymd');
     if (($d['last_sign'] ?? 0) == $today) { echo json_encode(['s'=>0, 'm'=>'📅 今天已签到']); exit; }
     
-    $targets = $config['rewards']['sign_in_servers'] ?? [];
-    $ok = 0;
+    $targets = $config['rewards']['sign_in_servers'] ?? []; $ok = 0;
     foreach ($targets as $sid) {
         if (runRcon(str_replace('%player%', $_SESSION['user']['realname'], $config['rewards']['daily_cmd']), $sid)) $ok++;
     }
@@ -75,13 +58,11 @@ if ($A === 'do_sign' && isset($_SESSION['user'])) {
         setUserData($u, 'last_sign', $today);
         $count = ($d['sign_count'] ?? 0) + 1; setUserData($u, 'sign_count', $count);
         echo json_encode(['s'=>1, 'm'=>"✅ 签到成功 (发放至 $ok 个服务器)"]);
-    } else {
-        echo json_encode(['s'=>0, 'm'=>'❌ 服务器连接失败']);
-    }
+    } else { echo json_encode(['s'=>0, 'm'=>'❌ 服务器连接失败']); }
     exit;
 }
 
-// 5. CDK 兑换 (多服)
+// 5. CDK 兑换
 if ($A === 'do_cdk' && isset($_SESSION['user'])) {
     $code = trim($_POST['code']); $srvIdx = (int)$_POST['server_id'];
     $u = $_SESSION['user']['username']; $cdks = getCdks();
@@ -90,11 +71,7 @@ if ($A === 'do_cdk' && isset($_SESSION['user'])) {
     $c = $cdks[$code];
     if ($c['used'] >= $c['max']) { echo json_encode(['s'=>0,'m'=>'⚠️ 已被抢光']); exit; }
     if (in_array($u, $c['users'])) { echo json_encode(['s'=>0,'m'=>'⚠️ 您已领取过']); exit; }
-    
-    // 校验服务器
-    if (isset($c['server_id']) && $c['server_id'] !== 'all' && (int)$c['server_id'] !== $srvIdx) {
-        echo json_encode(['s'=>0,'m'=>'❌ 此CDK不适用于该服务器']); exit;
-    }
+    if (isset($c['server_id']) && $c['server_id'] !== 'all' && (int)$c['server_id'] !== $srvIdx) { echo json_encode(['s'=>0,'m'=>'❌ 此CDK不适用于该服务器']); exit; }
     
     $targetSrv = ($c['server_id'] === 'all') ? $srvIdx : (int)$c['server_id'];
     
@@ -104,7 +81,7 @@ if ($A === 'do_cdk' && isset($_SESSION['user'])) {
     } else { echo json_encode(['s'=>0,'m'=>'❌ 发放失败']); } exit;
 }
 
-// 6. 🔥 找回密码 (发送验证码)
+// 6. 找回密码 (发送验证码 - 修复：智能创建缺失字段兼容原有数据库)
 if ($A === 'do_fp_send') {
     $u = strtolower(trim($_POST['u'])); $e = trim($_POST['e']);
     $stmt = $pdo->prepare("SELECT id, email FROM authme WHERE username = ?");
@@ -113,14 +90,21 @@ if ($A === 'do_fp_send') {
     if (!$r || $r['email'] !== $e) { echo json_encode(['s'=>0, 'm'=>'❌ 用户名与邮箱不匹配']); exit; }
     
     $code = rand(100000, 999999); $t = time();
-    $pdo->prepare("UPDATE authme SET reset_code=?, reset_time=? WHERE id=?")->execute([$code, $t, $r['id']]);
+    try {
+        $pdo->prepare("UPDATE authme SET reset_code=?, reset_time=? WHERE id=?")->execute([$code, $t, $r['id']]);
+    } catch (PDOException $e) {
+        if ($e->getCode() == '42S22') { 
+            $pdo->exec("ALTER TABLE authme ADD COLUMN reset_code VARCHAR(10), ADD COLUMN reset_time BIGINT");
+            $pdo->prepare("UPDATE authme SET reset_code=?, reset_time=? WHERE id=?")->execute([$code, $t, $r['id']]);
+        } else { echo json_encode(['s'=>0, 'm'=>'❌ 数据库异常']); exit; }
+    }
     
     $smtp = new TinySMTP();
     $smtp->send($e, "重置密码验证码", "您的验证码是: <b>$code</b> (10分钟内有效)", $config['smtp']);
     echo json_encode(['s'=>1, 'm'=>'✅ 验证码已发送至邮箱']); exit;
 }
 
-// 7. 🔥 找回密码 (重置)
+// 7. 找回密码 (重置)
 if ($A === 'do_fp_reset') {
     $u = strtolower(trim($_POST['u'])); $c = trim($_POST['code']); $p = $_POST['pass'];
     $stmt = $pdo->prepare("SELECT id, reset_code, reset_time FROM authme WHERE username = ?");
@@ -133,7 +117,6 @@ if ($A === 'do_fp_reset') {
     echo json_encode(['s'=>1, 'm'=>'🎉 密码修改成功！请登录']); exit;
 }
 
-// 验证码图片
 if ($A === 'captcha') { 
     $c=rand(1000,9999); $_SESSION['captcha']=$c;
     $i=imagecreatetruecolor(70,36); imagefill($i,0,0,0x3b82f6); imagestring($i,5,15,10,$c,0xffffff);
@@ -224,20 +207,7 @@ if ($A === 'captcha') {
         </script>
         <?php endif; ?>
         
-        <div id="box-login">
-            <h2 class="text-xl font-bold text-gray-700 mb-4">玩家登录</h2>
-            <form action="?action=do_login" method="POST" class="space-y-4">
-                <input name="username" placeholder="游戏角色名" class="input" required>
-                <input type="password" name="password" placeholder="密码" class="input" required>
-                <button class="btn-primary shadow-lg shadow-blue-500/30">立即登录</button>
-            </form>
-            <div class="mt-6 flex justify-between text-sm">
-                <a href="#" onclick="toggle('box-reg')" class="text-blue-600 font-bold hover:underline">注册账号</a>
-                <a href="#" onclick="toggle('box-fp')" class="text-gray-400 hover:text-gray-600">忘记密码?</a>
-            </div>
-        </div>
-
-        <div id="box-reg" class="hidden">
+        <div id="box-reg">
             <h2 class="text-xl font-bold text-gray-700 mb-4">新用户注册</h2>
             <form action="?action=do_reg" method="POST" class="space-y-3">
                 <input name="username" placeholder="Minecraft 角色名" class="input" required>
@@ -249,7 +219,20 @@ if ($A === 'captcha') {
                 </div>
                 <button class="btn-primary mt-2 bg-gradient-to-r from-green-500 to-emerald-600 border-none">确认注册</button>
             </form>
-            <p class="mt-6 text-sm"><a href="#" onclick="toggle('box-login')" class="text-blue-600 font-bold hover:underline">返回登录</a></p>
+            <p class="mt-6 text-sm"><a href="#" onclick="toggle('box-login')" class="text-blue-600 font-bold hover:underline">已有账号？点击登录</a></p>
+        </div>
+
+        <div id="box-login" class="hidden">
+            <h2 class="text-xl font-bold text-gray-700 mb-4">玩家登录</h2>
+            <form action="?action=do_login" method="POST" class="space-y-4">
+                <input name="username" placeholder="游戏角色名" class="input" required>
+                <input type="password" name="password" placeholder="密码" class="input" required>
+                <button class="btn-primary shadow-lg shadow-blue-500/30">立即登录</button>
+            </form>
+            <div class="mt-6 flex justify-between text-sm">
+                <a href="#" onclick="toggle('box-reg')" class="text-gray-400 hover:text-gray-600">注册账号</a>
+                <a href="#" onclick="toggle('box-fp')" class="text-blue-600 font-bold hover:underline">忘记密码?</a>
+            </div>
         </div>
 
         <div id="box-fp" class="hidden">
