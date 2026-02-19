@@ -5,7 +5,7 @@ return [
     'admin' => ['user'=>'admin', 'pass'=>'password123', 'email'=>''],
     'site' => [
         'title' => '流星MCS', 
-        'ver'   => '1.8', // 这里现在支持任意格式，如 '1.8.1' 或 '2.0-beta'
+        'ver'   => '1.8-Patched', // 这里现在支持任意格式，如 '1.8.1' 或 '2.0-beta'
         'bg'    => 'https://images.unsplash.com/photo-1607988795691-3d0147b43231?q=80&w=1920'
     ],
     'display' => ['ip'=>'127.0.0.1', 'port'=>'25565'], 
