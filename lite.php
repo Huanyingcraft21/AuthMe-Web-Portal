@@ -2,33 +2,27 @@
 /**
  * Project: 流星MCS Lite 单文件版 (Extreme Edition)
  * Version: v1.8 (Patched)
- * Note: 集成前台、后台、核心与专属单文件更新机制
+ * Note: 集成前台、后台、核心与专属单文件更新机制，纯净依赖外部 config.php
  */
 session_start();
 error_reporting(0);
 header('Content-Type: text/html; charset=utf-8');
 
 // ==========================================
-// 1. 核心逻辑与配置加载 (Core)
+// 1. 核心逻辑与外部配置加载 (严格依赖 config.php)
 // ==========================================
 $configFile = 'config.php';
-if (!file_exists($configFile) && !defined('IN_INSTALL')) die("Error: config.php missing. 请先运行 install.php");
-
-$config = [];
-if (file_exists($configFile)) {
-    $defaultConfig = [
-        'db' => ['host'=>'127.0.0.1', 'name'=>'authme', 'user'=>'root', 'pass'=>''],
-        'smtp' => ['host'=>'smtp.qq.com', 'port'=>465, 'user'=>'', 'pass'=>'', 'secure'=>'ssl', 'from_name'=>'流星MCS'],
-        'admin' => ['user'=>'admin', 'pass'=>'password123', 'email'=>''],
-        'site' => ['title'=>'流星MCS', 'ver'=>'1.8', 'bg'=>''],
-        'display' => ['ip'=>'', 'port'=>'25565'], 
-        'servers' => [['name'=>'Default', 'ip'=>'127.0.0.1', 'port'=>25565, 'rcon_port'=>25575, 'rcon_pass'=>'']],
-        'rewards' => ['reg_cmd'=>'', 'daily_cmd'=>'']
-    ];
-    $loaded = include($configFile);
-    $config = isset($loaded['host']) ? array_replace_recursive($defaultConfig, ['db'=>$loaded]) : array_replace_recursive($defaultConfig, $loaded);
+if (!file_exists($configFile)) {
+    die("<!DOCTYPE html><html><body style='text-align:center;padding-top:50px;font-family:sans-serif;color:#333;'>
+        <h1 style='color:#eab308;'>⚠️ 找不到 config.php</h1>
+        <p>系统未初始化，请先运行 <b>install.php</b> 完成安装。</p>
+    </body></html>");
 }
 
+// 纯净读取外部配置
+$config = include($configFile);
+
+// 兼容性修正：如果老版本配置没有 display 节点，则自动继承第一个服务器的 IP
 if (empty($config['display']['ip']) && !empty($config['servers'][0]['ip'])) {
     $config['display']['ip'] = $config['servers'][0]['ip'];
     $config['display']['port'] = $config['servers'][0]['port'];
@@ -138,6 +132,7 @@ if ($isAdminRoute) {
 
     if ($action === 'do_rcon_cmd') { $res=runRcon($_POST['cmd'],(int)$_POST['server_id']); echo json_encode(['res'=>$res===false?"连接失败":($res?:"指令已发送")]); exit; }
     
+    // 🔥 全配置保存逻辑 (直接写入外部 config.php)
     if ($action === 'do_save_settings') {
         $new=$config; $new['site']['title']=$_POST['site_title']; $new['site']['bg']=$_POST['site_bg'];
         if(!empty($_POST['servers_json'])) { $parsed = json_decode($_POST['servers_json'], true); if(is_array($parsed)) $new['servers'] = $parsed; }
@@ -157,6 +152,7 @@ if ($isAdminRoute) {
         if(isset($_POST['rcon_host'])) $new['rcon']['host']=$_POST['rcon_host'];
         if(isset($_POST['rcon_port'])) $new['rcon']['port']=$_POST['rcon_port'];
         if(!empty($_POST['rcon_pass'])) $new['rcon']['pass']=$_POST['rcon_pass'];
+        
         saveConfig($new); header("Location: ?a=admin&tab=settings&msg=save_ok"); exit;
     }
     
