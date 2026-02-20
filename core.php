@@ -1,7 +1,7 @@
 <?php
 /**
  * Project: 流星MCS Core
- * Version: v1.7.5 (Proxy Ready + Patched)
+ * Version: v1.9 (MetorCore API Edition)
  */
 error_reporting(0);
 $configFile = 'config.php';
@@ -13,22 +13,20 @@ if (file_exists($configFile)) {
         'db' => ['host'=>'127.0.0.1', 'name'=>'authme', 'user'=>'root', 'pass'=>''],
         'smtp' => ['host'=>'smtp.qq.com', 'port'=>465, 'user'=>'', 'pass'=>'', 'secure'=>'ssl', 'from_name'=>'流星MCS'],
         'admin' => ['user'=>'admin', 'pass'=>'password123', 'email'=>''],
-        'site' => ['title'=>'流星MCS', 'ver'=>'1.7.5', 'bg'=>''],
+        'site' => ['title'=>'流星MCS', 'ver'=>'1.9', 'bg'=>''],
         'display' => ['ip'=>'', 'port'=>'25565'], 
-        'servers' => [['name'=>'Default', 'ip'=>'127.0.0.1', 'port'=>25565, 'rcon_port'=>25575, 'rcon_pass'=>'']],
+        'servers' => [['name'=>'默认服务器', 'ip'=>'127.0.0.1', 'port'=>25565, 'api_port'=>8080, 'api_key'=>'']],
         'rewards' => ['reg_cmd'=>'', 'daily_cmd'=>'']
     ];
     $loaded = include($configFile);
     $config = isset($loaded['host']) ? array_replace_recursive($defaultConfig, ['db'=>$loaded]) : array_replace_recursive($defaultConfig, $loaded);
 }
 
-// 兼容性修正
 if (empty($config['display']['ip']) && !empty($config['servers'][0]['ip'])) {
     $config['display']['ip'] = $config['servers'][0]['ip'];
     $config['display']['port'] = $config['servers'][0]['port'];
 }
 
-// DB
 $pdo = null;
 if (!empty($config['db']['name'])) {
     try {
@@ -37,27 +35,49 @@ if (!empty($config['db']['name'])) {
     } catch (Exception $e) {}
 }
 
-// Utils
 function saveConfig($newConfig) { global $configFile; return file_put_contents($configFile, "<?php\nreturn " . var_export($newConfig, true) . ";"); }
 function hashAuthMe($p) { $s = bin2hex(random_bytes(8)); return "\$SHA\$" . $s . "\$" . hash('sha256', hash('sha256', $p) . $s); }
-// 修复：更改变量名为 $parts，防止覆写 $p 导致任何密码比对全为 false
 function verifyAuthMe($p, $hash) { $parts=explode('$', $hash); if(count($parts)===4&&$parts[1]==='SHA') return hash('sha256',hash('sha256',$p).$parts[2])===$parts[3]; return false; }
 
-// RCON
-class TinyRcon {
-    private $sock; private $id=0;
-    public function connect($h,$p,$pw){ $this->sock=@fsockopen($h,$p,$e,$r,3); if(!$this->sock)return false; $this->write(3,$pw); return $this->read(); }
-    public function cmd($c){ $this->write(2,$c); return $this->read(); }
-    private function write($t,$d){ $p=pack("VV",++$this->id,$t).$d."\x00\x00"; fwrite($this->sock,pack("V",strlen($p)).$p); }
-    private function read(){ $s=fread($this->sock,4); if(strlen($s)<4)return false; $l=unpack("V",$s)[1]; if($l>4096)$l=4096; return substr(fread($this->sock,$l),8,-2); }
-}
-function runRcon($cmd, $serverIdx = 0) {
+// ==========================================
+// 全新 MetorCore HTTP API 通讯引擎
+// ==========================================
+function runApiCmd($cmd, $serverIdx = 0) {
     global $config;
     if (!isset($config['servers'][$serverIdx])) return false;
     $s = $config['servers'][$serverIdx];
-    if (empty($s['rcon_pass']) || empty($cmd)) return false;
-    $r = new TinyRcon();
-    if ($r->connect($s['ip'], $s['rcon_port'], $s['rcon_pass'])) return $r->cmd($cmd);
+    
+    // 强制要求 64 位超长动态密钥必须存在
+    if (empty($s['api_key']) || empty($cmd)) return false;
+
+    $port = $s['api_port'] ?? 8080;
+    // 请求 MetorCore 的通用标准接口
+    $url = "http://{$s['ip']}:{$port}/api/execute";
+
+    $ch = curl_init($url);
+    $payload = json_encode(['action' => 'command', 'command' => $cmd]);
+    
+    // 采用现代 HTTP Header 鉴权，确保高强度安全密钥不可泄漏
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Content-Type: application/json',
+        'Authorization: Bearer ' . $s['api_key'],
+        'X-MetorCore-Key: ' . $s['api_key'],
+        'User-Agent: MeteorAWP/1.9 (Velocity Compatible)'
+    ]);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    // 解析 MetorCore 响应
+    if ($httpCode === 200) {
+        $data = json_decode($response, true);
+        return $data['result'] ?? "指令执行成功";
+    }
     return false;
 }
 
@@ -75,7 +95,6 @@ class TinySMTP {
     private function cmd($c){ if($c)fwrite($this->sock,$c."\r\n"); while($s=fgets($this->sock,515)){if(substr($s,3,1)==" ")break;} }
 }
 
-// Data Handling (修复：加入 LOCK_EX 防止高并发文件损坏)
 $userDataFile='user_data.json'; $cdkFile='cdk_data.json';
 function getUserData($u){ global $userDataFile; $d=file_exists($userDataFile)?json_decode(file_get_contents($userDataFile),true):[]; return $d[$u]??[]; }
 function setUserData($u,$k,$v){ global $userDataFile; $d=file_exists($userDataFile)?json_decode(file_get_contents($userDataFile),true):[]; $d[$u][$k]=$v; file_put_contents($userDataFile,json_encode($d), LOCK_EX); }
@@ -83,7 +102,6 @@ function getCdks(){ global $cdkFile; return file_exists($cdkFile)?json_decode(fi
 if(!function_exists('saveCdks')){ function saveCdks($d){ global $cdkFile; file_put_contents($cdkFile,json_encode($d), LOCK_EX); } }
 if(!function_exists('updateCdk')){ function updateCdk($c,$d){ $all=getCdks(); $all[$c]=$d; saveCdks($all); } }
 
-// Security
 $limitFile='login_limit.json';
 if(!function_exists('checkLock')){ function checkLock($f){ $ip=$_SERVER['REMOTE_ADDR']; $d=file_exists($f)?json_decode(file_get_contents($f),true):[]; if(!$d)$d=[]; foreach($d as $k=>$v){if(time()-$v['t']>3600)unset($d[$k]);} if(isset($d[$ip])&&$d[$ip]['c']>=3&&time()-$d[$ip]['t']<3600)return true; return false; } }
 if(!function_exists('logFail')){ function logFail($f){ $ip=$_SERVER['REMOTE_ADDR']; $d=file_exists($f)?json_decode(file_get_contents($f),true):[]; if(!$d)$d=[]; if(!isset($d[$ip]))$d[$ip]=['c'=>0,'t'=>time()]; $d[$ip]['c']++; $d[$ip]['t']=time(); file_put_contents($f,json_encode($d)); return $d[$ip]['c']; } }
