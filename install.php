@@ -1,19 +1,13 @@
 <?php
 /**
  * Project: 流星MCS 智能安装程序
- * Version: v1.6 Final (Cloud Installer)
- * Note: 支持在线下载标准版/Lite版，自动配置环境
+ * Version: v1.9 (MetorCore API Edition)
  */
 error_reporting(0);
 header('Content-Type: text/html; charset=utf-8');
 
-// ==========================================
-// 🛠️ 仓库配置 (指向你的 main 分支)
-// ==========================================
 $repoBase = 'https://raw.githubusercontent.com/Huanyingcraft21/AuthMe-Web-Portal/main/';
-// ==========================================
 
-// 检查是否已安装
 if (file_exists('config.php')) {
     die("<!DOCTYPE html><html><body style='text-align:center;padding-top:50px;font-family:sans-serif'>
     <h1 style='color:green'>✅ 系统已安装</h1>
@@ -25,22 +19,14 @@ if (file_exists('config.php')) {
 $step = $_GET['step'] ?? 1;
 $error = '';
 
-// --- 逻辑处理 ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $dbHost = $_POST['db_host'];
-    $dbName = $_POST['db_name'];
-    $dbUser = $_POST['db_user'];
-    $dbPass = $_POST['db_pass'];
-    $adminUser = $_POST['admin_user'];
-    $adminPass = $_POST['admin_pass'];
-    $installType = $_POST['install_type']; // 'standard' or 'lite'
+    $dbHost = $_POST['db_host']; $dbName = $_POST['db_name']; $dbUser = $_POST['db_user']; $dbPass = $_POST['db_pass'];
+    $adminUser = $_POST['admin_user']; $adminPass = $_POST['admin_pass']; $installType = $_POST['install_type'];
 
     try {
-        // 1. 测试数据库连接
         $pdo = new PDO("mysql:host=$dbHost", $dbUser, $dbPass);
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-        // 2. 创建数据库和表
         $pdo->exec("CREATE DATABASE IF NOT EXISTS `$dbName` DEFAULT CHARSET utf8mb4");
         $pdo->exec("USE `$dbName`");
         $pdo->exec("CREATE TABLE IF NOT EXISTS authme (
@@ -61,50 +47,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             reset_code VARCHAR(10), reset_time BIGINT
         )");
 
-        // 3. 下载文件逻辑 (云端拉取)
         $downloadLog = [];
-        
         if ($installType === 'lite') {
-            // === Lite 单文件版 ===
-            // 下载 lite.php -> 存为 index.php
             $content = @file_get_contents($repoBase . 'lite.php');
             if ($content && strlen($content) > 100) {
                 file_put_contents('index.php', $content);
                 $downloadLog[] = "✅ 单文件核心 (lite.php -> index.php) 下载成功";
-                // 清理可能存在的标准版文件
                 if(file_exists('admin.php')) unlink('admin.php');
                 if(file_exists('core.php')) unlink('core.php');
-            } else {
-                throw new Exception("无法从 GitHub 下载 Lite 版文件，请检查网络或仓库地址。");
-            }
+            } else { throw new Exception("无法从 GitHub 下载 Lite 版文件，请检查网络。"); }
         } else {
-            // === Standard 标准版 ===
-            // 下载三件套
             $files = ['index.php', 'admin.php', 'core.php'];
             foreach ($files as $f) {
                 $content = @file_get_contents($repoBase . $f);
-                if ($content && strlen($content) > 100) {
-                    file_put_contents($f, $content);
-                    $downloadLog[] = "✅ 核心文件 ($f) 下载成功";
-                } else {
-                    $downloadLog[] = "⚠️ 文件 ($f) 下载失败，可能需要手动上传";
-                }
+                if ($content && strlen($content) > 100) { file_put_contents($f, $content); $downloadLog[] = "✅ 核心文件 ($f) 下载成功"; } 
+                else { $downloadLog[] = "⚠️ 文件 ($f) 下载失败，可能需要手动上传"; }
             }
         }
 
-        // 4. 生成 config.php
         $configData = [
             'db' => ['host'=>$dbHost, 'name'=>$dbName, 'user'=>$dbUser, 'pass'=>$dbPass],
             'smtp' => ['host'=>'smtp.qq.com', 'port'=>465, 'user'=>'', 'pass'=>'', 'secure'=>'ssl', 'from_name'=>'流星MCS'],
             'admin' => ['user'=>$adminUser, 'pass'=>$adminPass, 'email'=>''],
-            'site' => ['title'=>'流星MCS', 'ver'=>'1.6', 'bg'=>''],
+            'site' => ['title'=>'流星MCS', 'ver'=>'1.9', 'bg'=>''],
+            'display' => ['ip'=>'', 'port'=>'25565'],
+            'servers' => [['name'=>'默认服务器', 'ip'=>'127.0.0.1', 'port'=>25565, 'api_port'=>8080, 'api_key'=>'']],
             'server' => ['ip'=>'', 'port'=>'25565'],
-            'rcon' => ['host'=>$dbHost, 'port'=>25575, 'pass'=>''], // 默认尝试填DB Host
+            'api' => ['host'=>$dbHost, 'port'=>8080, 'key'=>''],
             'rewards' => ['reg_cmd'=>'', 'daily_cmd'=>'']
         ];
         
         if (file_put_contents('config.php', "<?php\nreturn " . var_export($configData, true) . ";")) {
-            // 5. 跳转成功
             $installLog = implode("<br>", $downloadLog);
             $finalUrl = ($installType === 'lite') ? 'index.php' : 'admin.php';
             $finalName = ($installType === 'lite') ? '访问首页' : '进入后台';
@@ -115,23 +88,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class='text-5xl mb-4'>🎉</div>
                     <h2 class='text-2xl font-bold text-gray-800 mb-4'>安装成功！</h2>
                     <div class='bg-gray-50 text-left text-xs p-4 rounded border mb-6 text-gray-500 font-mono'>
-                        数据库连接...OK<br>
-                        数据表创建...OK<br>
-                        配置文件...OK<br>
-                        $installLog
+                        数据库连接...OK<br>数据表创建...OK<br>配置文件...OK<br>$installLog
                     </div>
-                    <p class='mb-6 text-gray-600'>系统已部署为 <b>".($installType=='lite'?'Lite 单文件版':'Standard 标准版')."</b></p>
+                    <p class='mb-6 text-gray-600'>系统已部署为 <b>".($installType=='lite'?'Lite 单文件版':'Standard 标准版 (v1.9 MetorCore API)')."</b></p>
                     <a href='$finalUrl' class='block w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition'>$finalName</a>
                     <p class='mt-4 text-xs text-red-400'>为了安全，请手动删除 install.php</p>
                 </div>
             </body></html>");
-        } else {
-            throw new Exception("无法写入 config.php，请检查目录权限 (需 777)。");
-        }
-
-    } catch (Exception $e) {
-        $error = $e->getMessage();
-    }
+        } else { throw new Exception("无法写入 config.php，请检查目录权限 (需 777)。"); }
+    } catch (Exception $e) { $error = $e->getMessage(); }
 }
 ?>
 <!DOCTYPE html>
@@ -139,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>安装向导 - 流星MCS v1.6</title>
+    <title>安装向导 - 流星MCS v1.9</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .option-card { border: 2px solid #e5e7eb; cursor: pointer; transition: all 0.2s; }
@@ -152,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
         <div class="bg-blue-600 p-6 text-white text-center">
             <h1 class="text-2xl font-bold">流星MCS 安装向导</h1>
-            <p class="text-blue-100 text-sm mt-1">Version 1.6 Final</p>
+            <p class="text-blue-100 text-sm mt-1">Version 1.9 (MetorCore Edition)</p>
         </div>
 
         <form method="POST" class="p-8">
@@ -169,18 +134,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <span class="font-bold text-blue-700">Standard 标准版</span>
                         <span class="text-xs bg-blue-600 text-white px-2 py-0.5 rounded">推荐</span>
                     </div>
-                    <p class="text-xs text-gray-500 leading-relaxed">
-                        功能全开：含后台管理、RCON奖励、CDK系统、邮件通知。适合正式运营。
-                    </p>
+                    <p class="text-xs text-gray-500 leading-relaxed">基于 MetorCore API 安全鉴权引擎，带完整后台管理、CDK与邮件系统。</p>
                 </div>
                 <div class="option-card p-4 rounded-lg" onclick="selectType('lite')" id="card-lite">
                     <div class="flex items-center justify-between mb-2">
                         <span class="font-bold text-green-700">Lite 单文件版</span>
                         <span class="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">极简</span>
                     </div>
-                    <p class="text-xs text-gray-500 leading-relaxed">
-                        仅保留注册功能。安装程序会自动下载 lite.php 并重命名为 index.php。
-                    </p>
+                    <p class="text-xs text-gray-500 leading-relaxed">一键下载全整合代码，同样享受高强度 HTTP Header 密钥验证。</p>
                 </div>
                 <input type="hidden" name="install_type" id="install_type" value="standard">
             </div>
@@ -222,7 +183,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <button class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow transition transform active:scale-95">
                 开始安装
             </button>
-            <p class="text-center text-xs text-gray-400 mt-4">安装过程需要连接 GitHub 下载文件，请确保网络通畅。</p>
+            <p class="text-center text-xs text-gray-400 mt-4">API 鉴权密钥将在安装完成后，于后台系统设置中生成并配置。</p>
         </form>
     </div>
 
@@ -231,16 +192,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             document.getElementById('install_type').value = type;
             document.getElementById('card-std').className = 'option-card p-4 rounded-lg ' + (type==='standard' ? 'selected' : '');
             document.getElementById('card-lite').className = 'option-card p-4 rounded-lg ' + (type==='lite' ? 'selected' : '');
-            
-            // Lite 版不需要设置管理员密码（因为Lite版通常没有复杂后台，或者使用简单验证）
-            // 但为了统一 config.php 结构，我们还是保留输入框，只是视觉上提示一下
-            const adminSec = document.getElementById('admin-section');
-            if(type === 'lite') {
-                // adminSec.style.opacity = '0.5'; 
-                // 实际上 v1.6 Lite 如果你还没写代码，建议 Lite 也共用 config，所以还是留着吧
-            } else {
-                // adminSec.style.opacity = '1';
-            }
         }
     </script>
 </body>
