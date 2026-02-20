@@ -1,7 +1,7 @@
 <?php
 /**
  * Project: Meteor Nexus 配置文件蓝图
- * Version: 2.1.3
+ * Version: 2.1.4
  */
 return [
     'db' => ['host' => '127.0.0.1', 'name' => 'authme', 'user' => 'root', 'pass' => ''],
