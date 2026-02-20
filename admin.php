@@ -1,7 +1,7 @@
 <?php
 /**
  * Project: 流星MCS 后台管理
- * Version: v1.9 (MetorCore API Edition)
+ * Version: v1.9.1 (GUI Nodes Manager)
  */
 session_start();
 require_once 'core.php';
@@ -39,7 +39,7 @@ if ($action === 'do_update') {
     }
     $sc = @file_get_contents($repoUrl . 'config_sample.php');
     if ($sc) {
-        file_put_contents('ctmp.php', $sc); $tpl=include('ctmp.php'); $old=include('config.php'); unlink('ctmp.php');
+        file_put_contents('ctmp.php', $sc); $tpl=include('ctmp.php'); $old=include('config.php'); @unlink('ctmp.php');
         $new = array_replace_recursive($tpl, $old);
         $ver = trim(@file_get_contents($repoUrl . 'version.txt'));
         if($ver) $new['site']['ver'] = $ver; 
@@ -54,13 +54,29 @@ if ($action === 'do_api_cmd') {
     exit; 
 }
 
+// 图形化节点管理：添加服务器
+if ($action === 'add_server') {
+    $new = $config;
+    $new['servers'][] = [
+        'name' => $_POST['name'], 'ip' => $_POST['ip'], 
+        'port' => (int)$_POST['port'], 'api_port' => (int)$_POST['api_port'], 'api_key' => $_POST['api_key']
+    ];
+    saveConfig($new); header("Location: ?action=dashboard&tab=servers"); exit;
+}
+
+// 图形化节点管理：删除服务器
+if ($action === 'del_server') {
+    $new = $config; $idx = (int)$_GET['id'];
+    if (isset($new['servers'][$idx])) {
+        unset($new['servers'][$idx]);
+        $new['servers'] = array_values($new['servers']); // 重建索引
+        saveConfig($new);
+    }
+    header("Location: ?action=dashboard&tab=servers"); exit;
+}
+
 if ($action === 'do_save_settings') {
     $new=$config; $new['site']['title']=$_POST['site_title']; $new['site']['bg']=$_POST['site_bg'];
-    
-    if(!empty($_POST['servers_json'])) { 
-        $parsed = json_decode($_POST['servers_json'], true); 
-        if(is_array($parsed)) $new['servers'] = $parsed; 
-    }
     
     $new['rewards']['reg_cmd']=$_POST['reg_cmd']; $new['rewards']['daily_cmd']=$_POST['daily_cmd'];
     $new['rewards']['sign_in_servers']=explode(',',$_POST['sign_in_servers']);
@@ -77,11 +93,8 @@ if ($action === 'do_save_settings') {
     if(!empty($_POST['admin_pass'])) $new['admin']['pass']=$_POST['admin_pass'];
     if(isset($_POST['admin_email'])) $new['admin']['email']=$_POST['admin_email'];
     
-    if(isset($_POST['server_ip'])) $new['server']['ip']=$_POST['server_ip'];
-    if(isset($_POST['server_port'])) $new['server']['port']=$_POST['server_port'];
-    if(isset($_POST['api_host'])) $new['api']['host']=$_POST['api_host'];
-    if(isset($_POST['api_port'])) $new['api']['port']=$_POST['api_port'];
-    if(!empty($_POST['api_key'])) $new['api']['key']=$_POST['api_key'];
+    // 清洗旧版本冗余数据
+    unset($new['rcon']); unset($new['server']); unset($new['api']);
     
     saveConfig($new); header("Location: ?action=dashboard&tab=settings&msg=save_ok"); exit;
 }
@@ -91,7 +104,7 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8"><meta name="viewport" content="width=device-width"><title>后台 v1.9</title>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width"><title>后台 v1.9.1</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>body{background:#f3f4f6} .input{width:100%;padding:0.5rem;border:1px solid #ddd;border-radius:0.3rem} .nav-btn{display:block;padding:0.6rem 1rem;margin-bottom:0.5rem;border-radius:0.5rem;font-weight:600;color:#4b5563} .nav-btn.active{background:#eff6ff;color:#2563eb}</style>
 </head>
@@ -107,6 +120,7 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
                 <button onclick="checkUpdate()" id="u-btn" class="mb-4 text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded">检查更新</button>
                 <nav>
                     <a href="?action=dashboard&tab=users" class="nav-btn <?= $tab=='users'?'active':'' ?>">👥 玩家管理</a>
+                    <a href="?action=dashboard&tab=servers" class="nav-btn <?= $tab=='servers'?'active':'' ?>">🌍 节点管理</a>
                     <a href="?action=dashboard&tab=console" class="nav-btn <?= $tab=='console'?'active':'' ?>">🖥️ MetorCore终端</a>
                     <a href="?action=dashboard&tab=cdk" class="nav-btn <?= $tab=='cdk'?'active':'' ?>">🎁 CDK 管理</a>
                     <a href="?action=dashboard&tab=settings" class="nav-btn <?= $tab=='settings'?'active':'' ?>">⚙️ 系统设置</a>
@@ -116,9 +130,49 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
             <div class="flex-1 p-8 overflow-y-auto relative">
                 <div id="u-modal" class="hidden absolute inset-0 bg-white/90 z-50 flex items-center justify-center"><div class="bg-white border shadow-xl p-6 rounded text-center w-96"><h3 class="font-bold text-lg mb-2">发现新版本</h3><p id="u-ver" class="text-blue-600 mb-4 font-mono"></p><div class="flex gap-2 justify-center"><button onclick="doUp()" class="bg-green-600 text-white px-4 py-2 rounded">更新</button><button onclick="document.getElementById('u-modal').classList.add('hidden')" class="bg-gray-200 px-4 py-2 rounded">取消</button></div></div></div>
 
+                <?php if ($dbError): ?>
+                <div class="bg-red-50 text-red-600 p-4 rounded mb-6 border border-red-200 flex items-center gap-2">
+                    <span class="text-xl">⚠️</span> 
+                    <div>
+                        <div class="font-bold">MySQL 数据库连接失败！</div>
+                        <div class="text-xs mt-1 font-mono"><?= htmlspecialchars($dbError) ?></div>
+                        <div class="text-xs mt-1">请在「系统设置」中核对数据库 IP、用户名和密码。</div>
+                    </div>
+                </div>
+                <?php endif; ?>
+
                 <?php if ($tab === 'users'): ?>
                     <table class="w-full text-sm text-left"><tr class="bg-gray-100"><th>ID</th><th>玩家</th><th>邮箱</th></tr><?php if($pdo): foreach($pdo->query("SELECT * FROM authme ORDER BY id DESC LIMIT 20") as $r): ?><tr class="border-b"><td class="p-3"><?=$r['id']?></td><td class="p-3"><?=htmlspecialchars($r['realname'])?></td><td class="p-3"><?=htmlspecialchars($r['email'])?></td></tr><?php endforeach; endif; ?></table>
                 
+                <?php elseif ($tab === 'servers'): ?>
+                    <div class="mb-6 bg-blue-50 p-5 rounded-lg border border-blue-100 shadow-sm">
+                        <h3 class="font-bold text-blue-800 mb-3 text-lg">添加新 MetorCore 节点</h3>
+                        <form action="?action=add_server" method="POST" class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <input name="name" placeholder="节点名称 (如: 生存区)" class="input col-span-2 md:col-span-1" required>
+                            <input name="ip" placeholder="节点公网 IP 地址" class="input col-span-2 md:col-span-1" required>
+                            <input name="port" placeholder="游戏端口 (默认25565)" value="25565" class="input" required>
+                            <input name="api_port" placeholder="API 端口 (默认8080)" value="8080" class="input" required>
+                            <input name="api_key" placeholder="64位超长动态密钥" class="input col-span-2 md:col-span-3 font-mono text-xs" required>
+                            <button class="bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700 shadow-md col-span-2 md:col-span-1">确认添加</button>
+                        </form>
+                    </div>
+                    <table class="w-full text-sm text-left bg-white rounded-lg overflow-hidden shadow">
+                        <tr class="bg-gray-800 text-white">
+                            <th class="p-3">ID</th><th class="p-3">节点名称</th><th class="p-3">IP 地址</th>
+                            <th class="p-3">游戏端口</th><th class="p-3">API 端口</th><th class="p-3">操作</th>
+                        </tr>
+                        <?php foreach($config['servers'] as $k => $v): ?>
+                        <tr class="border-b hover:bg-gray-50 transition">
+                            <td class="p-3 font-bold text-gray-500"><?=$k?></td>
+                            <td class="p-3 text-blue-600 font-bold"><?=htmlspecialchars($v['name'])?></td>
+                            <td class="p-3 font-mono"><?=htmlspecialchars($v['ip'])?></td>
+                            <td class="p-3"><?=$v['port']?></td>
+                            <td class="p-3 bg-green-50 text-green-700 font-bold"><?=$v['api_port']?></td>
+                            <td class="p-3"><a href="?action=del_server&id=<?=$k?>" class="text-red-500 bg-red-50 px-2 py-1 rounded hover:bg-red-500 hover:text-white transition" onclick="return confirm('确定删除此节点吗？')">删除</a></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </table>
+
                 <?php elseif ($tab === 'console'): ?>
                     <div class="flex gap-2 mb-2"><select id="cs" class="input w-48"><?php foreach($config['servers'] as $k=>$v)echo"<option value='$k'>{$v['name']}</option>"?></select><input id="cc" class="input flex-1" placeholder="API Command..."><button onclick="sc()" class="bg-black text-white px-4 rounded">Send</button></div>
                     <textarea id="cl" class="w-full h-96 bg-gray-900 text-green-400 p-4 rounded text-xs font-mono" readonly></textarea>
@@ -138,9 +192,6 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
                         <div class="mt-4 mb-2 p-2 bg-blue-100 text-blue-800 font-bold rounded">奖励策略</div>
                         <div class="grid grid-cols-2 gap-4"><div><label class="text-xs font-bold">注册指令</label><input name="reg_cmd" value="<?=$config['rewards']['reg_cmd']?>" class="input"></div><div><label class="text-xs font-bold">签到指令</label><input name="daily_cmd" value="<?=$config['rewards']['daily_cmd']?>" class="input"></div></div>
                         <div><label class="text-xs font-bold">签到生效服ID (逗号隔开)</label><input name="sign_in_servers" value="<?=implode(',',$config['rewards']['sign_in_servers'])?>" class="input"></div>
-                        
-                        <div class="mt-4 mb-2 p-2 bg-blue-100 text-blue-800 font-bold rounded">多服务器群组 MetorCore API (JSON)</div>
-                        <div><label class="text-xs font-bold">后端 API 列表 (替换原 RCON)</label><textarea name="servers_json" class="input h-24 font-mono text-xs"><?=json_encode($config['servers'])?></textarea></div>
 
                         <div class="mt-4 mb-2 p-2 bg-blue-100 text-blue-800 font-bold rounded">数据库连接 (AuthMe)</div>
                         <div class="grid grid-cols-2 gap-4">
@@ -165,15 +216,6 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
                             <div><label class="text-xs font-bold">管理员账号</label><input name="admin_user" value="<?=$config['admin']['user']?>" class="input"></div>
                             <div><label class="text-xs font-bold">管理员密码 (留空不修改)</label><input type="password" name="admin_pass" placeholder="***" class="input"></div>
                             <div class="col-span-2"><label class="text-xs font-bold">管理员邮箱</label><input name="admin_email" value="<?=$config['admin']['email'] ?? ''?>" class="input"></div>
-                        </div>
-                        
-                        <div class="mt-4 mb-2 p-2 bg-blue-100 text-blue-800 font-bold rounded">单服模式备用选项 (Server/API)</div>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div><label class="text-xs font-bold">单服 IP</label><input name="server_ip" value="<?=$config['server']['ip'] ?? ''?>" class="input"></div>
-                            <div><label class="text-xs font-bold">单服 Port</label><input name="server_port" value="<?=$config['server']['port'] ?? '25565'?>" class="input"></div>
-                            <div><label class="text-xs font-bold">单服 API Host</label><input name="api_host" value="<?=$config['api']['host'] ?? ''?>" class="input"></div>
-                            <div><label class="text-xs font-bold">单服 API Port</label><input name="api_port" value="<?=$config['api']['port'] ?? '8080'?>" class="input"></div>
-                            <div class="col-span-2"><label class="text-xs font-bold">单服 API Key (64位安全密钥，留空不改)</label><input type="password" name="api_key" placeholder="***" class="input"></div>
                         </div>
 
                         <button class="w-full bg-green-600 text-white px-6 py-3 mt-4 rounded font-bold hover:bg-green-700 transition shadow">保存所有设置</button>
