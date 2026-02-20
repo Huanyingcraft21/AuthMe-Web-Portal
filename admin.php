@@ -1,7 +1,7 @@
 <?php
 /**
  * Project: Meteor Nexus (流星枢纽) 后台管理
- * Version: v2.1
+ * Version: 动态读取 config.php (Final Test Edition)
  */
 session_start();
 require_once 'core.php';
@@ -33,36 +33,42 @@ if ($action === 'do_update') {
     echo json_encode(['status' => $ok?'ok':'err', 'log' => $log]); exit;
 }
 
+// 👑 新增：删除玩家账户
+if ($action === 'del_user') {
+    $id = (int)$_GET['id'];
+    if ($pdo && $id > 0) { $pdo->prepare("DELETE FROM authme WHERE id=?")->execute([$id]); }
+    header("Location: ?action=dashboard&tab=users&msg=del_ok"); exit;
+}
+
+// 👑 新增：修改玩家密码
+if ($action === 'edit_user_pass') {
+    $id = (int)$_POST['id']; $newPass = $_POST['new_pass'];
+    if ($pdo && !empty($newPass) && $id > 0) {
+        $pdo->prepare("UPDATE authme SET password=? WHERE id=?")->execute([hashAuthMe($newPass), $id]);
+    }
+    header("Location: ?action=dashboard&tab=users&msg=pass_ok"); exit;
+}
+
 if ($action === 'do_api_cmd') { $res = runApiCmd($_POST['cmd'], (int)$_POST['server_id']); echo json_encode(['res' => $res === false ? "安全通讯握手失败" : ($res ?: "指令已发送")]); exit; }
 
 if ($action === 'add_server') { $new = $config; $new['servers'][] = ['name' => $_POST['name'], 'ip' => $_POST['ip'], 'port' => (int)$_POST['port'], 'api_port' => (int)$_POST['api_port'], 'api_key' => $_POST['api_key']]; saveConfig($new); header("Location: ?action=dashboard&tab=servers"); exit; }
 if ($action === 'del_server') { $new = $config; $idx = (int)$_GET['id']; if (isset($new['servers'][$idx])) { unset($new['servers'][$idx]); $new['servers'] = array_values($new['servers']); saveConfig($new); } header("Location: ?action=dashboard&tab=servers"); exit; }
 
-// 🔥 ZIP 官网自动部署引擎
 if ($action === 'do_upload_official') {
     if (!class_exists('ZipArchive')) { header("Location: ?action=dashboard&tab=official&msg=err_nozip"); exit; }
     if (isset($_FILES['zip_file']) && $_FILES['zip_file']['error'] == 0) {
         $zip = new ZipArchive;
         if ($zip->open($_FILES['zip_file']['tmp_name']) === TRUE) {
-            // 安全黑名单：防止恶意 ZIP 覆盖核心程序
-            $blacklist = ['index.php', 'admin.php', 'core.php', 'config.php', 'install.php', 'lite.php', 'config_sample.php', 'user_data.json', 'cdk_data.json', 'login_limit.json', '.htaccess'];
+            $blacklist = ['admin.php', 'core.php', 'config.php', 'install.php', 'lite.php', 'config_sample.php', 'user_data.json', 'cdk_data.json', 'login_limit.json', '.htaccess'];
             for ($i = 0; $i < $zip->numFiles; $i++) {
-                $name = $zip->getNameIndex($i);
-                $base = strtolower(basename($name));
-                if (empty($base)) continue; // 跳过纯目录
-                if (in_array($base, $blacklist)) continue; // 跳过核心文件
-                if (strpos($name, '../') !== false) continue; // 防目录穿越
-                
-                // 智能映射：发现根目录的 index.html 时，自动转存为 official.html 实现融合
-                if (strtolower($name) === 'index.html') {
-                    file_put_contents('official.html', $zip->getFromIndex($i));
-                    continue;
-                }
-                // 解压其他所有资源 (css/js/img等)
+                $name = $zip->getNameIndex($i); $base = strtolower(basename($name));
+                if (empty($base) || strpos($name, '../') !== false) continue; 
+                if ($base === 'index.html' || $base === 'index.htm') { file_put_contents('official.html', $zip->getFromIndex($i)); continue; }
+                if ($base === 'index.php') { file_put_contents('official.php', $zip->getFromIndex($i)); continue; }
+                if (in_array($base, $blacklist)) continue; 
                 $zip->extractTo('./', array($name));
             }
-            $zip->close();
-            header("Location: ?action=dashboard&tab=official&msg=zip_ok"); exit;
+            $zip->close(); header("Location: ?action=dashboard&tab=official&msg=zip_ok"); exit;
         } else { header("Location: ?action=dashboard&tab=official&msg=err_zip"); exit; }
     }
     header("Location: ?action=dashboard&tab=official&msg=err_up"); exit;
@@ -72,16 +78,9 @@ if ($action === 'do_save_official') { file_put_contents('official.html', $_POST[
 
 if ($action === 'do_save_settings') {
     $new=$config; $new['site']['title']=$_POST['site_title']; $new['site']['bg']=$_POST['site_bg'];
-    
-    // 官网挂载引擎与路由保存
-    $new['modules']['official'] = (int)$_POST['module_official'];
-    $new['modules']['auth'] = (int)$_POST['module_auth'];
-    $new['route']['default'] = $_POST['route_default'];
-    $new['route']['domain_official'] = trim($_POST['domain_official']);
-    $new['route']['domain_auth'] = trim($_POST['domain_auth']);
-    $new['route']['official_type'] = $_POST['official_type'];
-    $new['route']['official_url'] = trim($_POST['official_url']);
-    
+    $new['modules']['official'] = (int)$_POST['module_official']; $new['modules']['auth'] = (int)$_POST['module_auth'];
+    $new['route']['default'] = $_POST['route_default']; $new['route']['domain_official'] = trim($_POST['domain_official']);
+    $new['route']['domain_auth'] = trim($_POST['domain_auth']); $new['route']['official_type'] = $_POST['official_type']; $new['route']['official_url'] = trim($_POST['official_url']);
     $new['rewards']['reg_cmd']=$_POST['reg_cmd']; $new['rewards']['daily_cmd']=$_POST['daily_cmd']; $new['rewards']['sign_in_servers']=explode(',',$_POST['sign_in_servers']);
     $new['db']['host']=$_POST['db_host']; $new['db']['name']=$_POST['db_name']; $new['db']['user']=$_POST['db_user']; if(!empty($_POST['db_pass'])) $new['db']['pass']=$_POST['db_pass'];
     $new['smtp']['host']=$_POST['smtp_host']; $new['smtp']['port']=$_POST['smtp_port']; $new['smtp']['user']=$_POST['smtp_user']; $new['smtp']['from_name']=$_POST['smtp_from']; if(!empty($_POST['smtp_pass'])) $new['smtp']['pass']=$_POST['smtp_pass']; if(isset($_POST['smtp_secure'])) $new['smtp']['secure']=$_POST['smtp_secure'];
@@ -94,7 +93,8 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8"><meta name="viewport" content="width=device-width"><title>后台 v2.1</title>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width">
+    <title>后台 v<?= htmlspecialchars($config['site']['ver']) ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>body{background:#f3f4f6} .input{width:100%;padding:0.5rem;border:1px solid #ddd;border-radius:0.3rem} .nav-btn{display:block;padding:0.6rem 1rem;margin-bottom:0.5rem;border-radius:0.5rem;font-weight:600;color:#4b5563} .nav-btn.active{background:#eff6ff;color:#2563eb}</style>
 </head>
@@ -106,7 +106,7 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
     
     <?php if(isset($_GET['msg'])): ?>
     <div class="fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-lg text-white font-bold z-50 animate-bounce <?= strpos($_GET['msg'],'ok')!==false?'bg-green-500':'bg-red-500' ?>">
-        <?= ['zip_ok'=>'🎉 官网压缩包解压部署成功！', 'err_zip'=>'❌ 压缩包损坏或无法打开', 'err_nozip'=>'❌ 您的 PHP 环境未开启 ZipArchive 扩展', 'err_up'=>'❌ 上传失败', 'save_ok'=>'✅ 保存成功'][$_GET['msg']] ?? $_GET['msg'] ?>
+        <?= ['zip_ok'=>'🎉 官网解压部署成功！', 'err_zip'=>'❌ 压缩包损坏或无法打开', 'err_nozip'=>'❌ PHP 未开启 ZipArchive', 'err_up'=>'❌ 上传失败', 'save_ok'=>'✅ 保存成功', 'del_ok'=>'🗑️ 玩家数据已永久删除', 'pass_ok'=>'🔑 密码重置成功'][$_GET['msg']] ?? $_GET['msg'] ?>
     </div>
     <?php endif; ?>
 
@@ -114,7 +114,7 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
         <div class="bg-white rounded-xl shadow-lg overflow-hidden flex flex-col md:flex-row min-h-[700px]">
             <div class="w-full md:w-56 bg-gray-50 p-6 border-r">
                 <div class="mb-8 font-extrabold text-2xl text-blue-600 px-2">Meteor Nexus <span class="text-xs text-gray-400 block font-normal">v<?= htmlspecialchars($config['site']['ver']) ?></span></div>
-                <button onclick="checkUpdate()" id="u-btn" class="mb-4 text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded">检查更新</button>
+                <button onclick="checkUpdate()" id="u-btn" class="mb-4 text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded w-full">检查更新</button>
                 <nav>
                     <a href="?action=dashboard&tab=official" class="nav-btn <?= $tab=='official'?'active':'' ?>">📝 官网部署</a>
                     <a href="?action=dashboard&tab=users" class="nav-btn <?= $tab=='users'?'active':'' ?>">👥 玩家管理</a>
@@ -126,27 +126,33 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
                 </nav>
             </div>
             <div class="flex-1 p-8 overflow-y-auto relative">
+                
+                <div id="u-modal" class="hidden absolute inset-0 bg-white/90 z-50 flex items-center justify-center">
+                    <div class="bg-white border shadow-xl p-6 rounded text-center w-96">
+                        <h3 class="font-bold text-lg mb-2">发现新版本</h3>
+                        <p id="u-ver" class="text-blue-600 mb-4 font-mono"></p>
+                        <div id="u-btns" class="flex gap-2 justify-center">
+                            <button onclick="doUp()" class="bg-green-600 text-white px-4 py-2 rounded shadow hover:bg-green-700 transition">立即更新</button>
+                            <button onclick="document.getElementById('u-modal').classList.add('hidden')" class="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300 transition">取消</button>
+                        </div>
+                        <div id="u-progress" class="hidden mt-2">
+                            <div class="w-full bg-gray-200 rounded-full h-2.5 mb-2"><div class="bg-blue-600 h-2.5 rounded-full animate-pulse" style="width: 100%"></div></div>
+                            <span class="text-xs text-gray-500 font-bold">正在拉取文件并应用更新，请勿刷新页面...</span>
+                        </div>
+                    </div>
+                </div>
+
                 <?php if ($dbError): ?><div class="bg-red-50 text-red-600 p-4 rounded mb-6 border border-red-200 flex items-center gap-2"><span class="text-xl">⚠️</span> <div><div class="font-bold">MySQL 数据库连接失败！</div><div class="text-xs mt-1 font-mono"><?= htmlspecialchars($dbError) ?></div></div></div><?php endif; ?>
 
                 <?php if ($tab === 'official'): ?>
-                    
                     <div class="mb-4 flex justify-between items-end">
-                        <div>
-                            <h2 class="text-xl font-bold text-gray-800">官网部署中心</h2>
-                            <p class="text-xs text-gray-500 mt-1">您可以通过上传 ZIP 压缩包一键部署含有多个文件的整站模板，或者直接在下方粘贴单页代码。</p>
-                        </div>
+                        <div><h2 class="text-xl font-bold text-gray-800">官网部署中心</h2><p class="text-xs text-gray-500 mt-1">您可以通过上传 ZIP 压缩包一键部署含有多个文件的整站模板，或者直接在下方粘贴单页代码。</p></div>
                         <a href="../" target="_blank" class="text-sm bg-blue-100 text-blue-600 px-3 py-1 rounded hover:bg-blue-200 font-bold shadow-sm">🚀 预览当前官网 -></a>
                     </div>
-
                     <form action="?action=do_upload_official" method="POST" enctype="multipart/form-data" class="bg-indigo-50 p-5 rounded-lg border border-indigo-100 flex items-center gap-4 mb-6 shadow-inner">
-                        <div class="flex-1">
-                            <h3 class="font-bold text-indigo-800 text-base mb-1">📦 上传网站模板 (ZIP 格式)</h3>
-                            <p class="text-xs text-indigo-600">请直接将您的模板文件（包含 <b>index.html</b>, <b>css</b>, <b>js</b> 等）打包成 zip 后上传。系统将自动提取并将主页挂载为官网。<br><span class="text-red-500 font-bold">* 请注意：打包时请直接全选文件进行压缩，不要把它们放进一个文件夹里再压缩。</span></p>
-                        </div>
-                        <input type="file" name="zip_file" accept=".zip" class="text-sm w-48 bg-white p-1 rounded border border-indigo-200" required>
-                        <button class="bg-indigo-600 text-white px-5 py-2 rounded font-bold shadow hover:bg-indigo-700 whitespace-nowrap transition">一键解压部署</button>
+                        <div class="flex-1"><h3 class="font-bold text-indigo-800 text-base mb-1">📦 上传网站模板 (支持 HTML / PHP)</h3><p class="text-xs text-indigo-600">系统将自动提取并将主页挂载为官网。<br><span class="text-red-500 font-bold">* 请直接全选文件进行压缩，不要把它们放进一个文件夹里再压缩。</span></p></div>
+                        <input type="file" name="zip_file" accept=".zip" class="text-sm w-48 bg-white p-1 rounded border border-indigo-200" required><button class="bg-indigo-600 text-white px-5 py-2 rounded font-bold shadow hover:bg-indigo-700 whitespace-nowrap transition">一键解压部署</button>
                     </form>
-
                     <form action="?action=do_save_official" method="POST">
                         <label class="block text-sm font-bold text-gray-600 mb-2">备用: 极简 HTML 单页代码编辑器</label>
                         <textarea name="html_code" class="w-full h-[300px] bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm shadow-inner outline-none mb-4" placeholder=""><?= file_exists('official.html') ? htmlspecialchars(file_get_contents('official.html')) : '' ?></textarea>
@@ -154,7 +160,34 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
                     </form>
 
                 <?php elseif ($tab === 'users'): ?>
-                    <table class="w-full text-sm text-left"><tr class="bg-gray-100"><th>ID</th><th>玩家</th><th>邮箱</th></tr><?php if($pdo): foreach($pdo->query("SELECT * FROM authme ORDER BY id DESC LIMIT 20") as $r): ?><tr class="border-b"><td class="p-3"><?=$r['id']?></td><td class="p-3"><?=htmlspecialchars($r['realname'])?></td><td class="p-3"><?=htmlspecialchars($r['email'])?></td></tr><?php endforeach; endif; ?></table>
+                    <table class="w-full text-sm text-left"><tr class="bg-gray-100"><th>ID</th><th>玩家</th><th>邮箱</th><th>安全操作</th></tr>
+                    <?php if($pdo): foreach($pdo->query("SELECT * FROM authme ORDER BY id DESC LIMIT 30") as $r): ?>
+                        <tr class="border-b hover:bg-gray-50 transition">
+                            <td class="p-3 font-bold text-gray-400"><?=$r['id']?></td>
+                            <td class="p-3 font-bold text-blue-600"><?=htmlspecialchars($r['realname'])?></td>
+                            <td class="p-3 text-xs text-gray-500"><?=htmlspecialchars($r['email'])?></td>
+                            <td class="p-3">
+                                <button onclick="cp(<?=$r['id']?>,'<?=htmlspecialchars($r['realname'])?>')" class="text-blue-500 bg-blue-50 px-3 py-1 rounded hover:bg-blue-500 hover:text-white transition font-bold shadow-sm">改密</button>
+                                <a href="?action=del_user&id=<?=$r['id']?>" onclick="return confirm('警告：永久删除玩家 [<?=htmlspecialchars($r['realname'])?>] 数据不可恢复，确认执行吗？');" class="text-red-500 bg-red-50 px-3 py-1 rounded hover:bg-red-500 hover:text-white transition font-bold shadow-sm ml-2">删除</a>
+                            </td>
+                        </tr>
+                    <?php endforeach; endif; ?>
+                    </table>
+                    
+                    <form id="cp_form" action="?action=edit_user_pass" method="POST" class="hidden">
+                        <input name="id" id="cp_id">
+                        <input name="new_pass" id="cp_pass">
+                    </form>
+                    <script>
+                    function cp(id, name) {
+                        let p = prompt('请输入你要为玩家【' + name + '】设置的新密码:');
+                        if(p) {
+                            document.getElementById('cp_id').value = id;
+                            document.getElementById('cp_pass').value = p;
+                            document.getElementById('cp_form').submit();
+                        }
+                    }
+                    </script>
                 
                 <?php elseif ($tab === 'servers'): ?>
                     <div class="mb-6 bg-blue-50 p-5 rounded-lg border border-blue-100 shadow-sm"><h3 class="font-bold text-blue-800 mb-3 text-lg">添加新 MetorCore 节点</h3><form action="?action=add_server" method="POST" class="grid grid-cols-2 md:grid-cols-4 gap-3"><input name="name" placeholder="节点名称" class="input col-span-2 md:col-span-1" required><input name="ip" placeholder="节点公网 IP 地址" class="input col-span-2 md:col-span-1" required><input name="port" placeholder="游戏端口" value="25565" class="input" required><input name="api_port" placeholder="API 端口" value="8080" class="input" required><input name="api_key" placeholder="64位超长动态密钥" class="input col-span-2 md:col-span-3 font-mono text-xs" required><button class="bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700 shadow-md col-span-2 md:col-span-1">确认添加</button></form></div>
@@ -169,19 +202,19 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
                 
                 <?php elseif ($tab === 'settings'): ?>
                     <form action="?action=do_save_settings" method="POST" class="space-y-4 max-w-2xl pb-8">
-                        <div class="mt-4 mb-2 p-2 bg-indigo-100 text-indigo-800 font-bold rounded">🌐 站点模式与路由 (v2.0)</div>
+                        <div class="mt-4 mb-2 p-2 bg-indigo-100 text-indigo-800 font-bold rounded">🌐 站点模式与路由</div>
                         <div class="grid grid-cols-2 gap-4 bg-indigo-50/50 p-4 border border-indigo-100 rounded">
                             <div><label class="text-xs font-bold text-gray-700">官网模块状态</label><select name="module_official" class="input font-bold text-indigo-700"><option value="1" <?=!empty($config['modules']['official'])?'selected':''?>>🟢 开启</option><option value="0" <?=empty($config['modules']['official'])?'selected':''?>>🔴 关闭</option></select></div>
                             <div><label class="text-xs font-bold text-gray-700">通行证/注册模块状态</label><select name="module_auth" class="input font-bold text-indigo-700"><option value="1" <?=!empty($config['modules']['auth'])?'selected':''?>>🟢 开启</option><option value="0" <?=empty($config['modules']['auth'])?'selected':''?>>🔴 关闭</option></select></div>
-                            <div class="col-span-2"><label class="text-xs font-bold text-gray-700">根目录默认访问展示 (Default Entry)</label><select name="route_default" class="input"><option value="official" <?=($config['route']['default']??'')==='official'?'selected':''?>>🏠 展示官网 (Official)</option><option value="auth" <?=($config['route']['default']??'')==='auth'?'selected':''?>>👤 展示通行证与注册 (Auth Portal)</option></select></div>
+                            <div class="col-span-2"><label class="text-xs font-bold text-gray-700">根目录默认访问展示</label><select name="route_default" class="input"><option value="official" <?=($config['route']['default']??'')==='official'?'selected':''?>>🏠 展示官网 (Official)</option><option value="auth" <?=($config['route']['default']??'')==='auth'?'selected':''?>>👤 展示通行证与注册 (Auth Portal)</option></select></div>
                             <div><label class="text-xs font-bold text-gray-700">官网独立绑定域名 (选填)</label><input name="domain_official" value="<?=$config['route']['domain_official']??''?>" placeholder="如: www.ermcs.cn" class="input"></div>
                             <div><label class="text-xs font-bold text-gray-700">注册独立绑定域名 (选填)</label><input name="domain_auth" value="<?=$config['route']['domain_auth']??''?>" placeholder="如: pass.ermcs.cn" class="input"></div>
                         </div>
 
-                        <div class="mt-4 mb-2 p-2 bg-emerald-100 text-emerald-800 font-bold rounded">📂 官网挂载引擎 (配合多文件网站模板)</div>
+                        <div class="mt-4 mb-2 p-2 bg-emerald-100 text-emerald-800 font-bold rounded">📂 官网挂载引擎</div>
                         <div class="grid grid-cols-2 gap-4 bg-emerald-50/50 p-4 border border-emerald-100 rounded">
                             <div><label class="text-xs font-bold text-gray-700">官网加载模式</label><select name="official_type" class="input"><option value="local" <?=($config['route']['official_type']??'')==='local'?'selected':''?>>📄 原生融合 (推荐，在官网部署菜单上传)</option><option value="iframe" <?=($config['route']['official_type']??'')==='iframe'?'selected':''?>>🪟 独立文件夹无缝内嵌</option><option value="redirect" <?=($config['route']['official_type']??'')==='redirect'?'selected':''?>>🔗 直接 302 跳转</option></select></div>
-                            <div><label class="text-xs font-bold text-gray-700">挂载文件夹/跳转链接 (原生融合无需填写)</label><input name="official_url" value="<?=$config['route']['official_url']??''?>" placeholder="如: /home/ 或 https://..." class="input"></div>
+                            <div><label class="text-xs font-bold text-gray-700">挂载文件夹/跳转链接</label><input name="official_url" value="<?=$config['route']['official_url']??''?>" placeholder="如: /home/ 或 https://..." class="input"></div>
                         </div>
 
                         <div class="mt-4 mb-2 p-2 bg-blue-100 text-blue-800 font-bold rounded">基础全局信息</div>
@@ -208,7 +241,16 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
     </div>
     <script>
     function checkUpdate(){let b=document.getElementById('u-btn');b.innerText='...';fetch('?action=check_update').then(r=>r.json()).then(d=>{b.innerText='检查更新';if(d.status=='new'){document.getElementById('u-ver').innerText=d.ver;document.getElementById('u-modal').classList.remove('hidden')}else alert(d.msg)})}
-    function doUp(){fetch('?action=do_update').then(r=>r.json()).then(d=>{alert(d.log);location.reload()})}
+    function doUp(){
+        // 隐藏按钮，展现进度条动画防连点
+        document.getElementById('u-btns').classList.add('hidden');
+        document.getElementById('u-progress').classList.remove('hidden');
+        fetch('?action=do_update').then(r=>r.json()).then(d=>{
+            alert(d.log); location.reload();
+        }).catch(e=>{
+            alert('更新过程出现异常或超时。'); location.reload();
+        });
+    }
     </script>
     <?php endif; ?>
 </body>
