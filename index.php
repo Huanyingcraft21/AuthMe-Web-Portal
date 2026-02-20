@@ -1,7 +1,7 @@
 <?php
 /**
  * Project: 流星MCS 标准版前台
- * Version: v1.9 (MetorCore Integration)
+ * Version: v1.9.1 (Safe Connection Edition)
  */
 session_start();
 header('Content-Type: text/html; charset=utf-8');
@@ -11,6 +11,7 @@ if (basename($_SERVER['PHP_SELF']) == 'config.php' || defined('IN_ADMIN')) retur
 $A = $_GET['action'] ?? 'home';
 
 if ($A === 'do_login') {
+    if (!$pdo) { header("Location: ?action=login&msg=err_db"); exit; } // 数据库断开拦截，防崩溃
     $u = strtolower(trim($_POST['username'])); $p = $_POST['password'];
     $stmt = $pdo->prepare("SELECT * FROM authme WHERE username=?");
     $stmt->execute([$u]);
@@ -24,6 +25,7 @@ if ($A === 'do_login') {
 if ($A === 'do_logout') { session_destroy(); header("Location: ?action=home"); exit; }
 
 if ($A === 'do_reg') {
+    if (!$pdo) { header("Location: ?action=login&msg=err_db"); exit; } // 数据库断开拦截
     if (empty($_SESSION['captcha']) || $_POST['captcha'] != $_SESSION['captcha']) { header("Location: ?msg=err_captcha"); exit; }
     $u = strtolower(trim($_POST['username'])); $ip = $_SERVER['REMOTE_ADDR'];
     
@@ -34,7 +36,6 @@ if ($A === 'do_reg') {
     $pdo->prepare("INSERT INTO authme (username,realname,password,email,ip,regdate,lastlogin) VALUES (?,?,?,?,?,?,?)")
         ->execute([$u, $_POST['username'], hashAuthMe($_POST['password']), $_POST['email'], $ip, time()*1000, time()*1000]);
     
-    // 将 RCON 切换至 API 通讯
     if (!empty($config['rewards']['reg_cmd'])) { runApiCmd(str_replace('%player%', $_POST['username'], $config['rewards']['reg_cmd']), 0); }
     
     $smtp = new TinySMTP(); $smtp->send($_POST['email'], "欢迎加入", "恭喜注册成功！", $config['smtp']);
@@ -76,6 +77,7 @@ if ($A === 'do_cdk' && isset($_SESSION['user'])) {
 }
 
 if ($A === 'do_fp_send') {
+    if (!$pdo) { echo json_encode(['s'=>0, 'm'=>'❌ 数据库断开，无法操作']); exit; }
     $u = strtolower(trim($_POST['u'])); $e = trim($_POST['e']);
     $stmt = $pdo->prepare("SELECT id, email FROM authme WHERE username = ?"); $stmt->execute([$u]); $r = $stmt->fetch();
     if (!$r || $r['email'] !== $e) { echo json_encode(['s'=>0, 'm'=>'❌ 用户名与邮箱不匹配']); exit; }
@@ -95,6 +97,7 @@ if ($A === 'do_fp_send') {
 }
 
 if ($A === 'do_fp_reset') {
+    if (!$pdo) { echo json_encode(['s'=>0, 'm'=>'❌ 数据库断开，无法操作']); exit; }
     $u = strtolower(trim($_POST['u'])); $c = trim($_POST['code']); $p = $_POST['pass'];
     $stmt = $pdo->prepare("SELECT id, reset_code, reset_time FROM authme WHERE username = ?"); $stmt->execute([$u]); $r = $stmt->fetch();
     if (!$r || $r['reset_code'] !== $c) { echo json_encode(['s'=>0, 'm'=>'❌ 验证码错误']); exit; }
@@ -132,7 +135,7 @@ if ($A === 'captcha') {
 
     <?php if(isset($_GET['msg'])): ?>
     <div class="fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-lg text-white font-bold z-50 animate-bounce <?= strpos($_GET['msg'],'ok')!==false?'bg-green-500':'bg-red-500' ?>">
-        <?= ['reg_ok'=>'🎉 注册成功！', 'err_pass'=>'🔒 密码错误', 'err_exists'=>'⚠️ 账号已存在', 'err_captcha'=>'❌ 验证码错误'][$_GET['msg']] ?? $_GET['msg'] ?>
+        <?= ['reg_ok'=>'🎉 注册成功！', 'err_pass'=>'🔒 密码错误', 'err_exists'=>'⚠️ 账号已存在', 'err_captcha'=>'❌ 验证码错误', 'err_db'=>'❌ 数据库连接异常'][$_GET['msg']] ?? $_GET['msg'] ?>
     </div>
     <?php endif; ?>
 
