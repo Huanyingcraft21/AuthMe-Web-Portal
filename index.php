@@ -1,7 +1,7 @@
 <?php
 /**
  * Project: Meteor Nexus (流星枢纽)
- * Version: v2.0.1 (Dual-Engine Hub Edition)
+ * Version: v2.1 (Native Fusion + Default UI Edition)
  */
 session_start();
 header('Content-Type: text/html; charset=utf-8');
@@ -25,37 +25,45 @@ if ($mode === 'auth' && empty($config['modules']['auth'])) $mode = 'official';
 if (empty($config['modules']['official']) && empty($config['modules']['auth'])) die("<h1 style='text-align:center;margin-top:20vh;'>🚧 整个系统正在维护中，所有模块已关闭</h1>");
 
 // ==========================================
-// 🌍 模式 A: 渲染流星网官网 (智能挂载引擎)
+// 🌍 模式 A: 渲染流星网官网 (原生融合)
 // ==========================================
 if ($mode === 'official') {
     $oType = $config['route']['official_type'] ?? 'local';
     $oUrl = $config['route']['official_url'] ?? '';
 
-    // 1. 跳转模式
-    if ($oType === 'redirect' && !empty($oUrl)) {
-        header("Location: $oUrl"); exit;
-    }
-    
-    // 2. 全屏无缝内嵌模式
+    if ($oType === 'redirect' && !empty($oUrl)) { header("Location: $oUrl"); exit; }
     if ($oType === 'iframe' && !empty($oUrl)) {
-        die("<!DOCTYPE html><html><head><meta charset='utf-8'><title>".htmlspecialchars($config['site']['title'])."</title>
-        <style>body,html{margin:0;padding:0;height:100%;overflow:hidden;}</style></head>
-        <body><iframe src='".htmlspecialchars($oUrl)."' width='100%' height='100%' frameborder='0'></iframe>
-        ".(!empty($config['modules']['auth']) ? "<a href='?m=auth' style='position:fixed;top:20px;right:20px;background:rgba(255,255,255,0.8);backdrop-filter:blur(5px);padding:8px 16px;border-radius:20px;box-shadow:0 4px 6px rgba(0,0,0,0.1);text-decoration:none;color:#333;font-family:sans-serif;font-size:13px;font-weight:bold;z-index:9999;'>👤 玩家通行证</a>" : "")."
-        </body></html>");
+        die("<!DOCTYPE html><html><head><meta charset='utf-8'><title>".htmlspecialchars($config['site']['title'])."</title><style>body,html{margin:0;padding:0;height:100%;overflow:hidden;}</style></head><body><iframe src='".htmlspecialchars($oUrl)."' width='100%' height='100%' frameborder='0'></iframe>".(!empty($config['modules']['auth']) ? "<a href='?m=auth' style='position:fixed;top:20px;right:20px;background:rgba(255,255,255,0.8);backdrop-filter:blur(5px);padding:8px 16px;border-radius:20px;box-shadow:0 4px 6px rgba(0,0,0,0.1);text-decoration:none;color:#333;font-family:sans-serif;font-size:13px;font-weight:bold;z-index:9999;'>👤 玩家通行证</a>" : "")."</body></html>");
     }
 
-    // 3. 原生本地读取模式
     if (file_exists('official.php')) { include 'official.php'; exit; }
     if (file_exists('official.html')) { echo file_get_contents('official.html'); exit; }
     
-    die("<!DOCTYPE html><html><body style='text-align:center;padding-top:10vh;font-family:sans-serif;background:#f3f4f6;'>
-        <div style='background:white;padding:40px;border-radius:10px;display:inline-block;box-shadow:0 10px 25px rgba(0,0,0,0.05);'>
-            <h1 style='color:#2563eb;margin-bottom:10px;'>🌠 Meteor Nexus 官网节点正常运行</h1>
-            <p style='color:#666;'>1. 将官网模板提取至根目录并把主页改名为 <b>official.html</b><br>2. 或者在后台的「系统设置」中配置指定文件夹挂载。</p>
-            ".(!empty($config['modules']['auth']) ? "<div style='margin-top:30px;'><a href='?m=auth' style='background:#10b981;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;font-weight:bold;'>前往 Meteor 通行证/注册中心 -></a></div>" : "")."
+    // 🔥 如果没有自定义官网，渲染精美的默认官网 UI
+    $bg = $config['site']['bg'] ?: 'https://images.unsplash.com/photo-1607988795691-3d0147b43231?q=80&w=1920';
+    $title = htmlspecialchars($config['site']['title']);
+    $authBtn = !empty($config['modules']['auth']) ? "<a href='?m=auth' class='inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transition transform hover:scale-105'>进入玩家中心 / 注册通行证 -></a>" : "";
+    
+    die("<!DOCTYPE html>
+    <html lang='zh-CN'>
+    <head>
+        <meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'>
+        <title>{$title} - 官方网站</title>
+        <script src='https://cdn.tailwindcss.com'></script>
+    </head>
+    <body class='text-gray-800' style='background: url(\"{$bg}\") no-repeat center center fixed; background-size: cover;'>
+        <div class='min-h-screen bg-black/40 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center'>
+            <div class='bg-white/10 p-2 rounded-full mb-6 backdrop-blur-md border border-white/20 shadow-2xl'>
+                <img src='https://cravatar.eu/helmavatar/Steve/128.png' class='w-24 h-24 rounded-full'>
+            </div>
+            <h1 class='text-5xl md:text-7xl font-extrabold text-white mb-6 tracking-tight drop-shadow-lg'>{$title}</h1>
+            <p class='text-lg md:text-2xl text-gray-200 mb-10 max-w-2xl drop-shadow-md leading-relaxed'>欢迎来到我们的 Minecraft 服务器。<br>这里是系统分配的默认展示页。管理员可在后台直接上传专属官网压缩包进行替换。</p>
+            <div class='space-x-4'>
+                {$authBtn}
+            </div>
         </div>
-    </body></html>");
+    </body>
+    </html>");
 }
 
 // ==========================================
