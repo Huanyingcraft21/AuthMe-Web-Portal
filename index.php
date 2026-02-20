@@ -1,7 +1,7 @@
 <?php
 /**
  * Project: 流星MCS 标准版前台
- * Version: v1.8 (Patched)
+ * Version: v1.9 (MetorCore Integration)
  */
 session_start();
 header('Content-Type: text/html; charset=utf-8');
@@ -10,24 +10,19 @@ require_once 'core.php';
 if (basename($_SERVER['PHP_SELF']) == 'config.php' || defined('IN_ADMIN')) return;
 $A = $_GET['action'] ?? 'home';
 
-// 1. 登录
 if ($A === 'do_login') {
     $u = strtolower(trim($_POST['username'])); $p = $_POST['password'];
     $stmt = $pdo->prepare("SELECT * FROM authme WHERE username=?");
     $stmt->execute([$u]);
     if ($r = $stmt->fetch()) {
         if (verifyAuthMe($p, $r['password'])) {
-            $_SESSION['user'] = $r;
-            header("Location: ?action=user_center");
+            $_SESSION['user'] = $r; header("Location: ?action=user_center");
         } else header("Location: ?action=login&msg=err_pass");
-    } else header("Location: ?action=login&msg=err_user");
-    exit;
+    } else header("Location: ?action=login&msg=err_user"); exit;
 }
 
-// 2. 退出
 if ($A === 'do_logout') { session_destroy(); header("Location: ?action=home"); exit; }
 
-// 3. 注册 (修复：查重崩溃 & 验证码绕过)
 if ($A === 'do_reg') {
     if (empty($_SESSION['captcha']) || $_POST['captcha'] != $_SESSION['captcha']) { header("Location: ?msg=err_captcha"); exit; }
     $u = strtolower(trim($_POST['username'])); $ip = $_SERVER['REMOTE_ADDR'];
@@ -39,30 +34,29 @@ if ($A === 'do_reg') {
     $pdo->prepare("INSERT INTO authme (username,realname,password,email,ip,regdate,lastlogin) VALUES (?,?,?,?,?,?,?)")
         ->execute([$u, $_POST['username'], hashAuthMe($_POST['password']), $_POST['email'], $ip, time()*1000, time()*1000]);
     
-    if (!empty($config['rewards']['reg_cmd'])) { runRcon(str_replace('%player%', $_POST['username'], $config['rewards']['reg_cmd']), 0); }
+    // 将 RCON 切换至 API 通讯
+    if (!empty($config['rewards']['reg_cmd'])) { runApiCmd(str_replace('%player%', $_POST['username'], $config['rewards']['reg_cmd']), 0); }
+    
     $smtp = new TinySMTP(); $smtp->send($_POST['email'], "欢迎加入", "恭喜注册成功！", $config['smtp']);
     header("Location: ?msg=reg_ok"); exit;
 }
 
-// 4. 每日签到
 if ($A === 'do_sign' && isset($_SESSION['user'])) {
     $u = $_SESSION['user']['username']; $d = getUserData($u); $today = date('Ymd');
     if (($d['last_sign'] ?? 0) == $today) { echo json_encode(['s'=>0, 'm'=>'📅 今天已签到']); exit; }
     
     $targets = $config['rewards']['sign_in_servers'] ?? []; $ok = 0;
     foreach ($targets as $sid) {
-        if (runRcon(str_replace('%player%', $_SESSION['user']['realname'], $config['rewards']['daily_cmd']), $sid)) $ok++;
+        if (runApiCmd(str_replace('%player%', $_SESSION['user']['realname'], $config['rewards']['daily_cmd']), $sid)) $ok++;
     }
     
     if ($ok > 0) {
         setUserData($u, 'last_sign', $today);
         $count = ($d['sign_count'] ?? 0) + 1; setUserData($u, 'sign_count', $count);
         echo json_encode(['s'=>1, 'm'=>"✅ 签到成功 (发放至 $ok 个服务器)"]);
-    } else { echo json_encode(['s'=>0, 'm'=>'❌ 服务器连接失败']); }
-    exit;
+    } else { echo json_encode(['s'=>0, 'm'=>'❌ 服务器 MetorCore API 握手失败']); } exit;
 }
 
-// 5. CDK 兑换
 if ($A === 'do_cdk' && isset($_SESSION['user'])) {
     $code = trim($_POST['code']); $srvIdx = (int)$_POST['server_id'];
     $u = $_SESSION['user']['username']; $cdks = getCdks();
@@ -75,18 +69,15 @@ if ($A === 'do_cdk' && isset($_SESSION['user'])) {
     
     $targetSrv = ($c['server_id'] === 'all') ? $srvIdx : (int)$c['server_id'];
     
-    if (runRcon(str_replace('%player%', $_SESSION['user']['realname'], $c['cmd']), $targetSrv)) {
+    if (runApiCmd(str_replace('%player%', $_SESSION['user']['realname'], $c['cmd']), $targetSrv)) {
         $c['used']++; $c['users'][] = $u; updateCdk($code, $c);
         echo json_encode(['s'=>1,'m'=>'🎁 兑换成功！']);
-    } else { echo json_encode(['s'=>0,'m'=>'❌ 发放失败']); } exit;
+    } else { echo json_encode(['s'=>0,'m'=>'❌ MetorCore 发放失败']); } exit;
 }
 
-// 6. 找回密码 (发送验证码 - 修复：智能创建缺失字段兼容原有数据库)
 if ($A === 'do_fp_send') {
     $u = strtolower(trim($_POST['u'])); $e = trim($_POST['e']);
-    $stmt = $pdo->prepare("SELECT id, email FROM authme WHERE username = ?");
-    $stmt->execute([$u]); $r = $stmt->fetch();
-    
+    $stmt = $pdo->prepare("SELECT id, email FROM authme WHERE username = ?"); $stmt->execute([$u]); $r = $stmt->fetch();
     if (!$r || $r['email'] !== $e) { echo json_encode(['s'=>0, 'm'=>'❌ 用户名与邮箱不匹配']); exit; }
     
     $code = rand(100000, 999999); $t = time();
@@ -99,20 +90,15 @@ if ($A === 'do_fp_send') {
         } else { echo json_encode(['s'=>0, 'm'=>'❌ 数据库异常']); exit; }
     }
     
-    $smtp = new TinySMTP();
-    $smtp->send($e, "重置密码验证码", "您的验证码是: <b>$code</b> (10分钟内有效)", $config['smtp']);
+    $smtp = new TinySMTP(); $smtp->send($e, "重置密码验证码", "您的验证码是: <b>$code</b> (10分钟内有效)", $config['smtp']);
     echo json_encode(['s'=>1, 'm'=>'✅ 验证码已发送至邮箱']); exit;
 }
 
-// 7. 找回密码 (重置)
 if ($A === 'do_fp_reset') {
     $u = strtolower(trim($_POST['u'])); $c = trim($_POST['code']); $p = $_POST['pass'];
-    $stmt = $pdo->prepare("SELECT id, reset_code, reset_time FROM authme WHERE username = ?");
-    $stmt->execute([$u]); $r = $stmt->fetch();
-    
+    $stmt = $pdo->prepare("SELECT id, reset_code, reset_time FROM authme WHERE username = ?"); $stmt->execute([$u]); $r = $stmt->fetch();
     if (!$r || $r['reset_code'] !== $c) { echo json_encode(['s'=>0, 'm'=>'❌ 验证码错误']); exit; }
     if (time() - $r['reset_time'] > 600) { echo json_encode(['s'=>0, 'm'=>'❌ 验证码已过期']); exit; }
-    
     $pdo->prepare("UPDATE authme SET password=?, reset_code=NULL WHERE id=?")->execute([hashAuthMe($p), $r['id']]);
     echo json_encode(['s'=>1, 'm'=>'🎉 密码修改成功！请登录']); exit;
 }
@@ -269,6 +255,5 @@ if ($A === 'captcha') {
     }
     </script>
     <?php endif; ?>
-
 </body>
 </html>
