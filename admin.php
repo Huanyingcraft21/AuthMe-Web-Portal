@@ -1,7 +1,7 @@
 <?php
 /**
  * Project: 流星MCS 后台管理
- * Version: v1.8 (Patched)
+ * Version: v1.9 (MetorCore API Edition)
  */
 session_start();
 require_once 'core.php';
@@ -30,6 +30,7 @@ if ($action === 'check_update') {
         else echo json_encode(['status' => 'latest', 'msg' => '已是最新']);
     } exit;
 }
+
 if ($action === 'do_update') {
     $files = ['index.php', 'admin.php', 'core.php', 'install.php', 'lite.php']; $log=""; $ok=true;
     foreach ($files as $f) {
@@ -47,9 +48,12 @@ if ($action === 'do_update') {
     echo json_encode(['status' => $ok?'ok':'err', 'log' => $log]); exit;
 }
 
-if ($action === 'do_rcon_cmd') { $res=runRcon($_POST['cmd'],(int)$_POST['server_id']); echo json_encode(['res'=>$res===false?"连接失败":($res?:"指令已发送")]); exit; }
+if ($action === 'do_api_cmd') { 
+    $res = runApiCmd($_POST['cmd'], (int)$_POST['server_id']); 
+    echo json_encode(['res' => $res === false ? "安全通讯握手失败，请检查 API 配置与密钥" : ($res ?: "指令已发送")]); 
+    exit; 
+}
 
-// 修复：JSON 防爆与全配置支持
 if ($action === 'do_save_settings') {
     $new=$config; $new['site']['title']=$_POST['site_title']; $new['site']['bg']=$_POST['site_bg'];
     
@@ -75,9 +79,9 @@ if ($action === 'do_save_settings') {
     
     if(isset($_POST['server_ip'])) $new['server']['ip']=$_POST['server_ip'];
     if(isset($_POST['server_port'])) $new['server']['port']=$_POST['server_port'];
-    if(isset($_POST['rcon_host'])) $new['rcon']['host']=$_POST['rcon_host'];
-    if(isset($_POST['rcon_port'])) $new['rcon']['port']=$_POST['rcon_port'];
-    if(!empty($_POST['rcon_pass'])) $new['rcon']['pass']=$_POST['rcon_pass'];
+    if(isset($_POST['api_host'])) $new['api']['host']=$_POST['api_host'];
+    if(isset($_POST['api_port'])) $new['api']['port']=$_POST['api_port'];
+    if(!empty($_POST['api_key'])) $new['api']['key']=$_POST['api_key'];
     
     saveConfig($new); header("Location: ?action=dashboard&tab=settings&msg=save_ok"); exit;
 }
@@ -87,7 +91,7 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8"><meta name="viewport" content="width=device-width"><title>后台 v1.8</title>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width"><title>后台 v1.9</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>body{background:#f3f4f6} .input{width:100%;padding:0.5rem;border:1px solid #ddd;border-radius:0.3rem} .nav-btn{display:block;padding:0.6rem 1rem;margin-bottom:0.5rem;border-radius:0.5rem;font-weight:600;color:#4b5563} .nav-btn.active{background:#eff6ff;color:#2563eb}</style>
 </head>
@@ -99,11 +103,11 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
     <div class="max-w-7xl mx-auto my-8 p-4">
         <div class="bg-white rounded-xl shadow-lg overflow-hidden flex flex-col md:flex-row min-h-[700px]">
             <div class="w-full md:w-56 bg-gray-50 p-6 border-r">
-                <div class="mb-8 font-extrabold text-2xl text-blue-600 px-2">流星MCS <span class="text-xs text-gray-400 block font-normal">v<?= htmlspecialchars($config['site']['ver']) ?></span></div>
+                <div class="mb-8 font-extrabold text-2xl text-blue-600 px-2">流星AWP <span class="text-xs text-gray-400 block font-normal">v<?= htmlspecialchars($config['site']['ver']) ?></span></div>
                 <button onclick="checkUpdate()" id="u-btn" class="mb-4 text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded">检查更新</button>
                 <nav>
                     <a href="?action=dashboard&tab=users" class="nav-btn <?= $tab=='users'?'active':'' ?>">👥 玩家管理</a>
-                    <a href="?action=dashboard&tab=console" class="nav-btn <?= $tab=='console'?'active':'' ?>">🖥️ RCON终端</a>
+                    <a href="?action=dashboard&tab=console" class="nav-btn <?= $tab=='console'?'active':'' ?>">🖥️ MetorCore终端</a>
                     <a href="?action=dashboard&tab=cdk" class="nav-btn <?= $tab=='cdk'?'active':'' ?>">🎁 CDK 管理</a>
                     <a href="?action=dashboard&tab=settings" class="nav-btn <?= $tab=='settings'?'active':'' ?>">⚙️ 系统设置</a>
                     <div class="pt-6 mt-6 border-t"><a href="?action=logout" class="nav-btn text-red-600">退出</a></div>
@@ -114,11 +118,17 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
 
                 <?php if ($tab === 'users'): ?>
                     <table class="w-full text-sm text-left"><tr class="bg-gray-100"><th>ID</th><th>玩家</th><th>邮箱</th></tr><?php if($pdo): foreach($pdo->query("SELECT * FROM authme ORDER BY id DESC LIMIT 20") as $r): ?><tr class="border-b"><td class="p-3"><?=$r['id']?></td><td class="p-3"><?=htmlspecialchars($r['realname'])?></td><td class="p-3"><?=htmlspecialchars($r['email'])?></td></tr><?php endforeach; endif; ?></table>
+                
                 <?php elseif ($tab === 'console'): ?>
-                    <div class="flex gap-2 mb-2"><select id="cs" class="input w-48"><?php foreach($config['servers'] as $k=>$v)echo"<option value='$k'>{$v['name']}</option>"?></select><input id="cc" class="input flex-1" placeholder="Command..."><button onclick="sc()" class="bg-black text-white px-4 rounded">Send</button></div><textarea id="cl" class="w-full h-96 bg-gray-900 text-green-400 p-4 rounded text-xs font-mono" readonly></textarea><script>function sc(){let c=document.getElementById('cc').value,s=document.getElementById('cs').value,l=document.getElementById('cl');if(!c)return;l.value+=`> ${c}\n`;fetch('?action=do_rcon_cmd',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:`cmd=${c}&server_id=${s}`}).then(r=>r.json()).then(d=>{l.value+=d.res+"\n\n";l.scrollTop=l.scrollHeight});document.getElementById('cc').value=''}</script>
+                    <div class="flex gap-2 mb-2"><select id="cs" class="input w-48"><?php foreach($config['servers'] as $k=>$v)echo"<option value='$k'>{$v['name']}</option>"?></select><input id="cc" class="input flex-1" placeholder="API Command..."><button onclick="sc()" class="bg-black text-white px-4 rounded">Send</button></div>
+                    <textarea id="cl" class="w-full h-96 bg-gray-900 text-green-400 p-4 rounded text-xs font-mono" readonly></textarea>
+                    <p class="text-xs text-gray-400 mt-2">提示: 此终端已接入 MetorCore 强加密引擎，兼容 1.8-最新版 及 Velocity 架构。</p>
+                    <script>function sc(){let c=document.getElementById('cc').value,s=document.getElementById('cs').value,l=document.getElementById('cl');if(!c)return;l.value+=`> ${c}\n`;fetch('?action=do_api_cmd',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:`cmd=${c}&server_id=${s}`}).then(r=>r.json()).then(d=>{l.value+=d.res+"\n\n";l.scrollTop=l.scrollHeight});document.getElementById('cc').value=''}</script>
+                
                 <?php elseif ($tab === 'cdk'): ?>
                     <form action="?action=add_cdk" method="POST" class="bg-blue-50 p-4 rounded mb-4 flex gap-2"><input name="code" placeholder="Code" class="input w-32"><input name="cmd" placeholder="Cmd" class="input flex-1"><input name="usage" value="1" class="input w-16"><select name="server_id" class="input w-24"><option value="all">All</option><?php foreach($config['servers'] as $k=>$v)echo"<option value='$k'>{$v['name']}</option>"?></select><button class="bg-blue-600 text-white px-4 rounded">Add</button></form>
                     <table class="w-full text-sm text-left"><tr class="bg-gray-100"><th>Code</th><th>Cmd</th><th>Srv</th><th>Use</th><th>Op</th></tr><?php foreach(getCdks() as $k=>$d): ?><tr class="border-b"><td class="p-3 font-bold"><?=htmlspecialchars($k)?></td><td class="p-3 text-xs"><?=htmlspecialchars($d['cmd'])?></td><td class="p-3 text-xs"><?=$d['server_id']=='all'?'All':$config['servers'][$d['server_id']]['name']?></td><td class="p-3"><?=($d['max']-$d['used'])?></td><td class="p-3"><a href="?action=del_cdk&code=<?=urlencode($k)?>" class="text-red-500">Del</a></td></tr><?php endforeach; ?></table>
+                
                 <?php elseif ($tab === 'settings'): ?>
                     <form action="?action=do_save_settings" method="POST" class="space-y-4 max-w-2xl pb-8">
                         <div class="mt-4 mb-2 p-2 bg-blue-100 text-blue-800 font-bold rounded">基本设置</div>
@@ -129,8 +139,8 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
                         <div class="grid grid-cols-2 gap-4"><div><label class="text-xs font-bold">注册指令</label><input name="reg_cmd" value="<?=$config['rewards']['reg_cmd']?>" class="input"></div><div><label class="text-xs font-bold">签到指令</label><input name="daily_cmd" value="<?=$config['rewards']['daily_cmd']?>" class="input"></div></div>
                         <div><label class="text-xs font-bold">签到生效服ID (逗号隔开)</label><input name="sign_in_servers" value="<?=implode(',',$config['rewards']['sign_in_servers'])?>" class="input"></div>
                         
-                        <div class="mt-4 mb-2 p-2 bg-blue-100 text-blue-800 font-bold rounded">多服务器群组 (JSON)</div>
-                        <div><label class="text-xs font-bold">多服后端 RCON 列表</label><textarea name="servers_json" class="input h-24 font-mono text-xs"><?=json_encode($config['servers'])?></textarea></div>
+                        <div class="mt-4 mb-2 p-2 bg-blue-100 text-blue-800 font-bold rounded">多服务器群组 MetorCore API (JSON)</div>
+                        <div><label class="text-xs font-bold">后端 API 列表 (替换原 RCON)</label><textarea name="servers_json" class="input h-24 font-mono text-xs"><?=json_encode($config['servers'])?></textarea></div>
 
                         <div class="mt-4 mb-2 p-2 bg-blue-100 text-blue-800 font-bold rounded">数据库连接 (AuthMe)</div>
                         <div class="grid grid-cols-2 gap-4">
@@ -157,13 +167,13 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
                             <div class="col-span-2"><label class="text-xs font-bold">管理员邮箱</label><input name="admin_email" value="<?=$config['admin']['email'] ?? ''?>" class="input"></div>
                         </div>
                         
-                        <div class="mt-4 mb-2 p-2 bg-blue-100 text-blue-800 font-bold rounded">单服模式备用选项 (Server/Rcon)</div>
+                        <div class="mt-4 mb-2 p-2 bg-blue-100 text-blue-800 font-bold rounded">单服模式备用选项 (Server/API)</div>
                         <div class="grid grid-cols-2 gap-4">
                             <div><label class="text-xs font-bold">单服 IP</label><input name="server_ip" value="<?=$config['server']['ip'] ?? ''?>" class="input"></div>
                             <div><label class="text-xs font-bold">单服 Port</label><input name="server_port" value="<?=$config['server']['port'] ?? '25565'?>" class="input"></div>
-                            <div><label class="text-xs font-bold">单服 RCON Host</label><input name="rcon_host" value="<?=$config['rcon']['host'] ?? ''?>" class="input"></div>
-                            <div><label class="text-xs font-bold">单服 RCON Port</label><input name="rcon_port" value="<?=$config['rcon']['port'] ?? '25575'?>" class="input"></div>
-                            <div class="col-span-2"><label class="text-xs font-bold">单服 RCON Pass (留空不修改)</label><input type="password" name="rcon_pass" placeholder="***" class="input"></div>
+                            <div><label class="text-xs font-bold">单服 API Host</label><input name="api_host" value="<?=$config['api']['host'] ?? ''?>" class="input"></div>
+                            <div><label class="text-xs font-bold">单服 API Port</label><input name="api_port" value="<?=$config['api']['port'] ?? '8080'?>" class="input"></div>
+                            <div class="col-span-2"><label class="text-xs font-bold">单服 API Key (64位安全密钥，留空不改)</label><input type="password" name="api_key" placeholder="***" class="input"></div>
                         </div>
 
                         <button class="w-full bg-green-600 text-white px-6 py-3 mt-4 rounded font-bold hover:bg-green-700 transition shadow">保存所有设置</button>
