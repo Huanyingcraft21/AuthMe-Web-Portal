@@ -1,7 +1,7 @@
 <?php
 /**
  * Project: Meteor Nexus (流星枢纽) 后台管理
- * Version: 动态读取 config.php (Final Test Edition)
+ * Version: v2.1.4 (Preview Link Fixed)
  */
 session_start();
 require_once 'core.php';
@@ -33,24 +33,9 @@ if ($action === 'do_update') {
     echo json_encode(['status' => $ok?'ok':'err', 'log' => $log]); exit;
 }
 
-// 👑 新增：删除玩家账户
-if ($action === 'del_user') {
-    $id = (int)$_GET['id'];
-    if ($pdo && $id > 0) { $pdo->prepare("DELETE FROM authme WHERE id=?")->execute([$id]); }
-    header("Location: ?action=dashboard&tab=users&msg=del_ok"); exit;
-}
-
-// 👑 新增：修改玩家密码
-if ($action === 'edit_user_pass') {
-    $id = (int)$_POST['id']; $newPass = $_POST['new_pass'];
-    if ($pdo && !empty($newPass) && $id > 0) {
-        $pdo->prepare("UPDATE authme SET password=? WHERE id=?")->execute([hashAuthMe($newPass), $id]);
-    }
-    header("Location: ?action=dashboard&tab=users&msg=pass_ok"); exit;
-}
-
+if ($action === 'del_user') { $id = (int)$_GET['id']; if ($pdo && $id > 0) { $pdo->prepare("DELETE FROM authme WHERE id=?")->execute([$id]); } header("Location: ?action=dashboard&tab=users&msg=del_ok"); exit; }
+if ($action === 'edit_user_pass') { $id = (int)$_POST['id']; $newPass = $_POST['new_pass']; if ($pdo && !empty($newPass) && $id > 0) { $pdo->prepare("UPDATE authme SET password=? WHERE id=?")->execute([hashAuthMe($newPass), $id]); } header("Location: ?action=dashboard&tab=users&msg=pass_ok"); exit; }
 if ($action === 'do_api_cmd') { $res = runApiCmd($_POST['cmd'], (int)$_POST['server_id']); echo json_encode(['res' => $res === false ? "安全通讯握手失败" : ($res ?: "指令已发送")]); exit; }
-
 if ($action === 'add_server') { $new = $config; $new['servers'][] = ['name' => $_POST['name'], 'ip' => $_POST['ip'], 'port' => (int)$_POST['port'], 'api_port' => (int)$_POST['api_port'], 'api_key' => $_POST['api_key']]; saveConfig($new); header("Location: ?action=dashboard&tab=servers"); exit; }
 if ($action === 'del_server') { $new = $config; $idx = (int)$_GET['id']; if (isset($new['servers'][$idx])) { unset($new['servers'][$idx]); $new['servers'] = array_values($new['servers']); saveConfig($new); } header("Location: ?action=dashboard&tab=servers"); exit; }
 
@@ -147,7 +132,7 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
                 <?php if ($tab === 'official'): ?>
                     <div class="mb-4 flex justify-between items-end">
                         <div><h2 class="text-xl font-bold text-gray-800">官网部署中心</h2><p class="text-xs text-gray-500 mt-1">您可以通过上传 ZIP 压缩包一键部署含有多个文件的整站模板，或者直接在下方粘贴单页代码。</p></div>
-                        <a href="../" target="_blank" class="text-sm bg-blue-100 text-blue-600 px-3 py-1 rounded hover:bg-blue-200 font-bold shadow-sm">🚀 预览当前官网 -></a>
+                        <a href="<?=!empty($config['route']['domain_official'])?(preg_match('#^https?://#',$config['route']['domain_official'])?$config['route']['domain_official']:'http://'.$config['route']['domain_official']):'../?m=official'?>" target="_blank" class="text-sm bg-blue-100 text-blue-600 px-3 py-1 rounded hover:bg-blue-200 font-bold shadow-sm">🚀 预览当前官网 -></a>
                     </div>
                     <form action="?action=do_upload_official" method="POST" enctype="multipart/form-data" class="bg-indigo-50 p-5 rounded-lg border border-indigo-100 flex items-center gap-4 mb-6 shadow-inner">
                         <div class="flex-1"><h3 class="font-bold text-indigo-800 text-base mb-1">📦 上传网站模板 (支持 HTML / PHP)</h3><p class="text-xs text-indigo-600">系统将自动提取并将主页挂载为官网。<br><span class="text-red-500 font-bold">* 请直接全选文件进行压缩，不要把它们放进一个文件夹里再压缩。</span></p></div>
@@ -173,21 +158,8 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
                         </tr>
                     <?php endforeach; endif; ?>
                     </table>
-                    
-                    <form id="cp_form" action="?action=edit_user_pass" method="POST" class="hidden">
-                        <input name="id" id="cp_id">
-                        <input name="new_pass" id="cp_pass">
-                    </form>
-                    <script>
-                    function cp(id, name) {
-                        let p = prompt('请输入你要为玩家【' + name + '】设置的新密码:');
-                        if(p) {
-                            document.getElementById('cp_id').value = id;
-                            document.getElementById('cp_pass').value = p;
-                            document.getElementById('cp_form').submit();
-                        }
-                    }
-                    </script>
+                    <form id="cp_form" action="?action=edit_user_pass" method="POST" class="hidden"><input name="id" id="cp_id"><input name="new_pass" id="cp_pass"></form>
+                    <script>function cp(id, name) { let p = prompt('请输入你要为玩家【' + name + '】设置的新密码:'); if(p) { document.getElementById('cp_id').value = id; document.getElementById('cp_pass').value = p; document.getElementById('cp_form').submit(); } }</script>
                 
                 <?php elseif ($tab === 'servers'): ?>
                     <div class="mb-6 bg-blue-50 p-5 rounded-lg border border-blue-100 shadow-sm"><h3 class="font-bold text-blue-800 mb-3 text-lg">添加新 MetorCore 节点</h3><form action="?action=add_server" method="POST" class="grid grid-cols-2 md:grid-cols-4 gap-3"><input name="name" placeholder="节点名称" class="input col-span-2 md:col-span-1" required><input name="ip" placeholder="节点公网 IP 地址" class="input col-span-2 md:col-span-1" required><input name="port" placeholder="游戏端口" value="25565" class="input" required><input name="api_port" placeholder="API 端口" value="8080" class="input" required><input name="api_key" placeholder="64位超长动态密钥" class="input col-span-2 md:col-span-3 font-mono text-xs" required><button class="bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700 shadow-md col-span-2 md:col-span-1">确认添加</button></form></div>
@@ -242,7 +214,6 @@ if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d
     <script>
     function checkUpdate(){let b=document.getElementById('u-btn');b.innerText='...';fetch('?action=check_update').then(r=>r.json()).then(d=>{b.innerText='检查更新';if(d.status=='new'){document.getElementById('u-ver').innerText=d.ver;document.getElementById('u-modal').classList.remove('hidden')}else alert(d.msg)})}
     function doUp(){
-        // 隐藏按钮，展现进度条动画防连点
         document.getElementById('u-btns').classList.add('hidden');
         document.getElementById('u-progress').classList.remove('hidden');
         fetch('?action=do_update').then(r=>r.json()).then(d=>{
