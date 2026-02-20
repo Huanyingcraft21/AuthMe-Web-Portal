@@ -1,7 +1,7 @@
 <?php
 /**
  * Project: Meteor Nexus (流星枢纽)
- * Version: v2.1 (Native Fusion + Default UI Edition)
+ * Version: v2.1.3 (Root & WWW Sync Edition)
  */
 session_start();
 header('Content-Type: text/html; charset=utf-8');
@@ -9,15 +9,26 @@ require_once 'core.php';
 
 if (basename($_SERVER['PHP_SELF']) == 'config.php' || defined('IN_ADMIN')) return;
 
-$host = $_SERVER['HTTP_HOST'] ?? '';
+// ==========================================
+// 🚀 智能路由引擎 (双域自动解析)
+// ==========================================
+$host = strtolower(explode(':', $_SERVER['HTTP_HOST'] ?? '')[0]);
 $mode = $config['route']['default'] ?? 'official';
+
+// 自动清洗 URL，剥离 http://、路径以及开头的 www.
+$d_off = strtolower(preg_replace('#^https?://#', '', trim($config['route']['domain_official'] ?? '')));
+$d_off = preg_replace('#^www\.#', '', explode('/', $d_off)[0]);
+
+$d_auth = strtolower(preg_replace('#^https?://#', '', trim($config['route']['domain_auth'] ?? '')));
+$d_auth = preg_replace('#^www\.#', '', explode('/', $d_auth)[0]);
 
 if (isset($_GET['m'])) {
     if ($_GET['m'] === 'official') $mode = 'official';
     if ($_GET['m'] === 'auth') $mode = 'auth';
 } else {
-    if (!empty($config['route']['domain_official']) && strpos($host, $config['route']['domain_official']) !== false) $mode = 'official';
-    elseif (!empty($config['route']['domain_auth']) && strpos($host, $config['route']['domain_auth']) !== false) $mode = 'auth';
+    // 精准拦截：只要匹配到根域或 www 域，统统拿下
+    if (!empty($d_auth) && ($host === $d_auth || $host === "www.$d_auth")) $mode = 'auth';
+    elseif (!empty($d_off) && ($host === $d_off || $host === "www.$d_off")) $mode = 'official';
 }
 
 if ($mode === 'official' && empty($config['modules']['official'])) $mode = 'auth';
@@ -25,7 +36,7 @@ if ($mode === 'auth' && empty($config['modules']['auth'])) $mode = 'official';
 if (empty($config['modules']['official']) && empty($config['modules']['auth'])) die("<h1 style='text-align:center;margin-top:20vh;'>🚧 整个系统正在维护中，所有模块已关闭</h1>");
 
 // ==========================================
-// 🌍 模式 A: 渲染流星网官网 (原生融合)
+// 🌍 模式 A: 渲染流星网官网
 // ==========================================
 if ($mode === 'official') {
     $oType = $config['route']['official_type'] ?? 'local';
@@ -39,28 +50,19 @@ if ($mode === 'official') {
     if (file_exists('official.php')) { include 'official.php'; exit; }
     if (file_exists('official.html')) { echo file_get_contents('official.html'); exit; }
     
-    // 🔥 如果没有自定义官网，渲染精美的默认官网 UI
     $bg = $config['site']['bg'] ?: 'https://images.unsplash.com/photo-1607988795691-3d0147b43231?q=80&w=1920';
     $title = htmlspecialchars($config['site']['title']);
     $authBtn = !empty($config['modules']['auth']) ? "<a href='?m=auth' class='inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transition transform hover:scale-105'>进入玩家中心 / 注册通行证 -></a>" : "";
     
     die("<!DOCTYPE html>
     <html lang='zh-CN'>
-    <head>
-        <meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'>
-        <title>{$title} - 官方网站</title>
-        <script src='https://cdn.tailwindcss.com'></script>
-    </head>
+    <head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'><title>{$title} - 官方网站</title><script src='https://cdn.tailwindcss.com'></script></head>
     <body class='text-gray-800' style='background: url(\"{$bg}\") no-repeat center center fixed; background-size: cover;'>
         <div class='min-h-screen bg-black/40 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center'>
-            <div class='bg-white/10 p-2 rounded-full mb-6 backdrop-blur-md border border-white/20 shadow-2xl'>
-                <img src='https://cravatar.eu/helmavatar/Steve/128.png' class='w-24 h-24 rounded-full'>
-            </div>
+            <div class='bg-white/10 p-2 rounded-full mb-6 backdrop-blur-md border border-white/20 shadow-2xl'><img src='https://cravatar.eu/helmavatar/Steve/128.png' class='w-24 h-24 rounded-full'></div>
             <h1 class='text-5xl md:text-7xl font-extrabold text-white mb-6 tracking-tight drop-shadow-lg'>{$title}</h1>
             <p class='text-lg md:text-2xl text-gray-200 mb-10 max-w-2xl drop-shadow-md leading-relaxed'>欢迎来到我们的 Minecraft 服务器。<br>这里是系统分配的默认展示页。管理员可在后台直接上传专属官网压缩包进行替换。</p>
-            <div class='space-x-4'>
-                {$authBtn}
-            </div>
+            <div class='space-x-4'>{$authBtn}</div>
         </div>
     </body>
     </html>");
@@ -149,7 +151,6 @@ if ($A === 'captcha') {
     $i=imagecreatetruecolor(70,36); imagefill($i,0,0,0x3b82f6); imagestring($i,5,15,10,$c,0xffffff);
     header("Content-type: image/png"); imagepng($i); exit; 
 }
-
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -167,7 +168,6 @@ if ($A === 'captcha') {
     </style>
 </head>
 <body class="flex items-center justify-center min-h-screen p-4 text-gray-800">
-
     <?php if (!empty($config['modules']['official'])): ?>
         <a href="?m=official" class="fixed top-5 right-5 bg-white/80 backdrop-blur px-4 py-2 rounded-full shadow font-bold text-sm text-gray-700 hover:bg-white transition z-50">🏠 返回官网</a>
     <?php endif; ?>
@@ -182,78 +182,43 @@ if ($A === 'captcha') {
     <div class="glass-card w-full max-w-md p-8 fade-in">
         <div class="flex items-center gap-4 mb-6 pb-6 border-b border-gray-200">
             <img src="https://cravatar.eu/helmavatar/<?=$user['realname']?>/64.png" class="w-16 h-16 rounded-xl shadow-md">
-            <div>
-                <h2 class="text-xl font-bold text-gray-800"><?=$user['realname']?></h2>
-                <div class="text-sm text-gray-500">签到: <span class="font-bold text-blue-600"><?=$udata['sign_count']??0?></span> 天</div>
-            </div>
+            <div><h2 class="text-xl font-bold text-gray-800"><?=$user['realname']?></h2><div class="text-sm text-gray-500">签到: <span class="font-bold text-blue-600"><?=$udata['sign_count']??0?></span> 天</div></div>
             <a href="?m=auth&action=do_logout" class="ml-auto text-xs bg-red-50 text-red-500 px-3 py-2 rounded hover:bg-red-100 transition">退出</a>
         </div>
-
-        <button onclick="sign(this)" class="w-full mb-6 py-3 rounded-xl font-bold shadow transition border <?= ($udata['last_sign']??0)==date('Ymd') ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100' ?>">
-            <?= ($udata['last_sign']??0)==date('Ymd') ? '✅ 今日已签到' : '📅 每日签到' ?>
-        </button>
-
+        <button onclick="sign(this)" class="w-full mb-6 py-3 rounded-xl font-bold shadow transition border <?= ($udata['last_sign']??0)==date('Ymd') ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100' ?>"><?= ($udata['last_sign']??0)==date('Ymd') ? '✅ 今日已签到' : '📅 每日签到' ?></button>
         <div class="space-y-3">
             <label class="text-xs font-bold text-gray-400 uppercase">CDK 兑换</label>
-            <select id="sel_srv" class="input font-bold text-blue-900">
-                <?php foreach($config['servers'] as $idx => $srv): ?><option value="<?=$idx?>">🌍 <?= htmlspecialchars($srv['name']) ?></option><?php endforeach; ?>
-            </select>
-            <div class="flex gap-2">
-                <input id="cdk" placeholder="输入兑换码..." class="input">
-                <button onclick="cdk()" class="bg-green-600 text-white px-5 rounded-lg font-bold shadow hover:bg-green-700 transition">兑换</button>
-            </div>
+            <select id="sel_srv" class="input font-bold text-blue-900"><?php foreach($config['servers'] as $idx => $srv): ?><option value="<?=$idx?>">🌍 <?= htmlspecialchars($srv['name']) ?></option><?php endforeach; ?></select>
+            <div class="flex gap-2"><input id="cdk" placeholder="输入兑换码..." class="input"><button onclick="cdk()" class="bg-green-600 text-white px-5 rounded-lg font-bold shadow hover:bg-green-700 transition">兑换</button></div>
         </div>
     </div>
     <script>
     function sign(b){ b.disabled=true; b.innerText='...'; fetch('?m=auth&action=do_sign').then(r=>r.json()).then(d=>{ alert(d.m); if(d.s) { b.innerText='✅ 已签到'; b.className='w-full mb-6 py-3 rounded-xl font-bold shadow transition border bg-gray-100 text-gray-400 cursor-not-allowed'; } else b.disabled=false; }); }
     function cdk(){ let c=document.getElementById('cdk').value; let s=document.getElementById('sel_srv').value; if(!c)return; fetch('?m=auth&action=do_cdk',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:`code=${c}&server_id=${s}`}).then(r=>r.json()).then(d=>{ alert(d.m); if(d.s)document.getElementById('cdk').value=''; }); }
     </script>
-
     <?php else: ?>
     <div class="glass-card w-full max-w-sm p-8 text-center relative fade-in">
-        <h1 class="text-3xl font-extrabold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-cyan-600 pb-1">
-            <?= htmlspecialchars($config['site']['title']) ?>
-        </h1>
-
+        <h1 class="text-3xl font-extrabold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-cyan-600 pb-1"><?= htmlspecialchars($config['site']['title']) ?></h1>
         <div id="box-reg">
             <h2 class="text-xl font-bold text-gray-700 mb-4">通行证注册</h2>
             <form action="?m=auth&action=do_reg" method="POST" class="space-y-3">
-                <input name="username" placeholder="Minecraft 角色名" class="input" required>
-                <input name="email" type="email" placeholder="电子邮箱 (用于找回密码)" class="input" required>
-                <input type="password" name="password" placeholder="设置密码" class="input" required>
-                <div class="flex gap-2">
-                    <input name="captcha" placeholder="验证码" class="input" required>
-                    <img src="?action=captcha" onclick="this.src='?action=captcha&'+Math.random()" class="h-11 rounded cursor-pointer border border-gray-200">
-                </div>
+                <input name="username" placeholder="Minecraft 角色名" class="input" required><input name="email" type="email" placeholder="电子邮箱 (用于找回密码)" class="input" required><input type="password" name="password" placeholder="设置密码" class="input" required>
+                <div class="flex gap-2"><input name="captcha" placeholder="验证码" class="input" required><img src="?action=captcha" onclick="this.src='?action=captcha&'+Math.random()" class="h-11 rounded cursor-pointer border border-gray-200"></div>
                 <button class="btn-primary mt-2 bg-gradient-to-r from-green-500 to-emerald-600 border-none">确认注册</button>
             </form>
             <p class="mt-6 text-sm"><a href="#" onclick="toggle('box-login')" class="text-blue-600 font-bold hover:underline">已有账号？点击登录</a></p>
         </div>
-
         <div id="box-login" class="hidden">
             <h2 class="text-xl font-bold text-gray-700 mb-4">通行证登录</h2>
-            <form action="?m=auth&action=do_login" method="POST" class="space-y-4">
-                <input name="username" placeholder="游戏角色名" class="input" required>
-                <input type="password" name="password" placeholder="密码" class="input" required>
-                <button class="btn-primary shadow-lg shadow-blue-500/30">立即登录</button>
-            </form>
-            <div class="mt-6 flex justify-between text-sm">
-                <a href="#" onclick="toggle('box-reg')" class="text-gray-400 hover:text-gray-600">注册账号</a>
-                <a href="#" onclick="toggle('box-fp')" class="text-blue-600 font-bold hover:underline">忘记密码?</a>
-            </div>
+            <form action="?m=auth&action=do_login" method="POST" class="space-y-4"><input name="username" placeholder="游戏角色名" class="input" required><input type="password" name="password" placeholder="密码" class="input" required><button class="btn-primary shadow-lg shadow-blue-500/30">立即登录</button></form>
+            <div class="mt-6 flex justify-between text-sm"><a href="#" onclick="toggle('box-reg')" class="text-gray-400 hover:text-gray-600">注册账号</a><a href="#" onclick="toggle('box-fp')" class="text-blue-600 font-bold hover:underline">忘记密码?</a></div>
         </div>
-
         <div id="box-fp" class="hidden">
             <h2 class="text-xl font-bold text-gray-700 mb-4">重置密码</h2>
             <div class="space-y-3 text-left">
                 <input id="fp_u" placeholder="您的游戏名" class="input">
-                <div class="flex gap-2">
-                    <input id="fp_e" placeholder="绑定的邮箱" class="input">
-                    <button onclick="sendCode()" class="bg-gray-500 text-white px-3 rounded text-xs whitespace-nowrap hover:bg-gray-600">发送验证码</button>
-                </div>
-                <input id="fp_c" placeholder="验证码" class="input">
-                <input id="fp_p" type="password" placeholder="设置新密码" class="input">
-                <button onclick="doReset()" class="btn-primary bg-orange-500 hover:bg-orange-600 border-none">提交重置</button>
+                <div class="flex gap-2"><input id="fp_e" placeholder="绑定的邮箱" class="input"><button onclick="sendCode()" class="bg-gray-500 text-white px-3 rounded text-xs whitespace-nowrap hover:bg-gray-600">发送验证码</button></div>
+                <input id="fp_c" placeholder="验证码" class="input"><input id="fp_p" type="password" placeholder="设置新密码" class="input"><button onclick="doReset()" class="btn-primary bg-orange-500 hover:bg-orange-600 border-none">提交重置</button>
             </div>
             <p class="mt-6 text-sm"><a href="#" onclick="toggle('box-login')" class="text-blue-600 font-bold hover:underline">返回登录</a></p>
         </div>
