@@ -1,7 +1,7 @@
 <?php
 /**
- * Project: 流星MCS Core
- * Version: v1.9.1 (MetorCore API Edition + GUI Manager)
+ * Project: Meteor Nexus (流星枢纽) Core
+ * Version: v2.0.1 (Mounting Engine Edition)
  */
 error_reporting(0);
 $configFile = 'config.php';
@@ -11,12 +11,15 @@ $config = [];
 if (file_exists($configFile)) {
     $defaultConfig = [
         'db' => ['host'=>'127.0.0.1', 'name'=>'authme', 'user'=>'root', 'pass'=>''],
-        'smtp' => ['host'=>'smtp.qq.com', 'port'=>465, 'user'=>'', 'pass'=>'', 'secure'=>'ssl', 'from_name'=>'流星MCS'],
+        'smtp' => ['host'=>'smtp.qq.com', 'port'=>465, 'user'=>'', 'pass'=>'', 'secure'=>'ssl', 'from_name'=>'流星网'],
         'admin' => ['user'=>'admin', 'pass'=>'password123', 'email'=>''],
-        'site' => ['title'=>'流星MCS', 'ver'=>'1.9.1', 'bg'=>''],
+        'site' => ['title'=>'Meteor Nexus', 'ver'=>'2.0.1', 'bg'=>''],
         'display' => ['ip'=>'', 'port'=>'25565'], 
         'servers' => [['name'=>'默认服务器', 'ip'=>'127.0.0.1', 'port'=>25565, 'api_port'=>8080, 'api_key'=>'']],
-        'rewards' => ['reg_cmd'=>'', 'daily_cmd'=>'']
+        'rewards' => ['reg_cmd'=>'', 'daily_cmd'=>''],
+        'modules' => ['official' => 1, 'auth' => 1],
+        // [v2.0.1 新增] 官网挂载类型与目标地址
+        'route' => ['default' => 'official', 'domain_official' => '', 'domain_auth' => '', 'official_type' => 'local', 'official_url' => '']
     ];
     $loaded = include($configFile);
     $config = isset($loaded['host']) ? array_replace_recursive($defaultConfig, ['db'=>$loaded]) : array_replace_recursive($defaultConfig, $loaded);
@@ -27,57 +30,30 @@ if (empty($config['display']['ip']) && !empty($config['servers'][0]['ip'])) {
     $config['display']['port'] = $config['servers'][0]['port'];
 }
 
-// 增强数据库连接逻辑，捕获并保存具体的错误信息
-$pdo = null;
-$dbError = '';
+$pdo = null; $dbError = '';
 if (!empty($config['db']['name'])) {
     try {
         $dsn = "mysql:host={$config['db']['host']};dbname={$config['db']['name']};charset=utf8mb4";
         $pdo = new PDO($dsn, $config['db']['user'], $config['db']['pass'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-    } catch (PDOException $e) {
-        $dbError = $e->getMessage();
-    }
+    } catch (PDOException $e) { $dbError = $e->getMessage(); }
 }
 
 function saveConfig($newConfig) { global $configFile; return file_put_contents($configFile, "<?php\nreturn " . var_export($newConfig, true) . ";"); }
 function hashAuthMe($p) { $s = bin2hex(random_bytes(8)); return "\$SHA\$" . $s . "\$" . hash('sha256', hash('sha256', $p) . $s); }
 function verifyAuthMe($p, $hash) { $parts=explode('$', $hash); if(count($parts)===4&&$parts[1]==='SHA') return hash('sha256',hash('sha256',$p).$parts[2])===$parts[3]; return false; }
 
-// MetorCore HTTP API 通讯引擎
 function runApiCmd($cmd, $serverIdx = 0) {
-    global $config;
-    if (!isset($config['servers'][$serverIdx])) return false;
-    $s = $config['servers'][$serverIdx];
-    if (empty($s['api_key']) || empty($cmd)) return false;
-
-    $port = $s['api_port'] ?? 8080;
-    $url = "http://{$s['ip']}:{$port}/api/execute";
-
-    $ch = curl_init($url);
-    $payload = json_encode(['action' => 'command', 'command' => $cmd]);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Content-Type: application/json',
-        'Authorization: Bearer ' . $s['api_key'],
-        'X-MetorCore-Key: ' . $s['api_key'],
-        'User-Agent: MeteorAWP/1.9.1'
-    ]);
+    global $config; if (!isset($config['servers'][$serverIdx])) return false;
+    $s = $config['servers'][$serverIdx]; if (empty($s['api_key']) || empty($cmd)) return false;
+    $port = $s['api_port'] ?? 8080; $url = "http://{$s['ip']}:{$port}/api/execute";
+    $ch = curl_init($url); $payload = json_encode(['action' => 'command', 'command' => $cmd]);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); curl_setopt($ch, CURLOPT_POST, true); curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'Authorization: Bearer ' . $s['api_key'], 'X-MetorCore-Key: ' . $s['api_key'], 'User-Agent: MeteorNexus/2.0.1']);
     curl_setopt($ch, CURLOPT_TIMEOUT, 3);
-    
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    
-    if ($httpCode === 200) {
-        $data = json_decode($response, true);
-        return $data['result'] ?? "指令执行成功";
-    }
-    return false;
+    $response = curl_exec($ch); $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    if ($httpCode === 200) { $data = json_decode($response, true); return $data['result'] ?? "指令执行成功"; } return false;
 }
 
-// SMTP
 class TinySMTP {
     private $sock;
     public function send($to,$sub,$body,$conf){
