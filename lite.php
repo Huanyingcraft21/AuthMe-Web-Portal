@@ -1,14 +1,14 @@
 <?php
 /**
  * Project: Meteor Nexus (流星枢纽) Lite 单文件版
- * Version: v2.1.1 (Ultimate Edition)
+ * Version: v2.1.3 (Root & WWW Sync Edition)
  */
 session_start();
 error_reporting(0);
 header('Content-Type: text/html; charset=utf-8');
 
 // ==========================================
-// 1. 核心逻辑与外部配置加载 (严格依赖 config.php)
+// 1. 核心逻辑与外部配置加载
 // ==========================================
 $configFile = 'config.php';
 if (!file_exists($configFile)) {
@@ -33,7 +33,7 @@ function runApiCmd($cmd, $serverIdx = 0) {
     $port = $s['api_port'] ?? 8080; $url = "http://{$s['ip']}:{$port}/api/execute";
     $ch = curl_init($url); $payload = json_encode(['action' => 'command', 'command' => $cmd]);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); curl_setopt($ch, CURLOPT_POST, true); curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'Authorization: Bearer ' . $s['api_key'], 'X-MetorCore-Key: ' . $s['api_key'], 'User-Agent: MeteorNexus/2.1.1-Lite']);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'Authorization: Bearer ' . $s['api_key'], 'X-MetorCore-Key: ' . $s['api_key'], 'User-Agent: MeteorNexus/2.1.3-Lite']);
     curl_setopt($ch, CURLOPT_TIMEOUT, 3);
     $response = curl_exec($ch); $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
     if ($httpCode === 200) { $data = json_decode($response, true); return $data['result'] ?? "指令执行成功"; } return false;
@@ -68,31 +68,15 @@ $action = $_GET['action'] ?? ($_GET['a'] ?? 'home');
 $isAdminRoute = (isset($_GET['a']) && $_GET['a'] === 'admin') || in_array($action, ['do_sys_login', 'admin_logout', 'check_update', 'do_update', 'do_api_cmd', 'do_save_settings', 'add_cdk', 'del_cdk', 'del_user', 'edit_user_pass', 'add_server', 'del_server', 'do_upload_official', 'do_save_official']);
 
 if ($isAdminRoute) {
-    // ==========================================
-    // 3A. 中枢后台管理系统 (Admin Module)
-    // ==========================================
+    // --- 3A. 后台系统代码 ---
     $repoUrl = 'https://raw.githubusercontent.com/Huanyingcraft21/AuthMe-Web-Portal/main/';
     if (checkLock($limitFile) && $action === 'do_sys_login') die("<h1>🚫 IP Locked</h1>");
     if ($action === 'admin_logout') { unset($_SESSION['is_admin']); header("Location: ?a=admin"); exit; }
-    
-    if ($action === 'do_sys_login') {
-        if ($_POST['user'] === $config['admin']['user'] && $_POST['pass'] === $config['admin']['pass']) { clearFail($limitFile); $_SESSION['is_admin'] = true; header("Location: ?a=admin"); } else { $c = logFail($limitFile); header("Location: ?a=admin&msg=err_auth&rem=".(3-$c)); } exit;
-    }
+    if ($action === 'do_sys_login') { if ($_POST['user'] === $config['admin']['user'] && $_POST['pass'] === $config['admin']['pass']) { clearFail($limitFile); $_SESSION['is_admin'] = true; header("Location: ?a=admin"); } else { $c = logFail($limitFile); header("Location: ?a=admin&msg=err_auth&rem=".(3-$c)); } exit; }
     if ($action !== 'admin' && $action !== 'do_sys_login' && !isset($_SESSION['is_admin'])) { header("Location: ?a=admin"); exit; }
 
-    if ($action === 'check_update') {
-        $remoteVer = @file_get_contents($repoUrl . 'version.txt');
-        if ($remoteVer === false) echo json_encode(['status' => 'err', 'msg' => '连接 GitHub 失败']);
-        else { $remoteVer = trim($remoteVer); $currentVer = $config['site']['ver']; if (version_compare($remoteVer, $currentVer, '>')) echo json_encode(['status' => 'new', 'ver' => $remoteVer, 'msg' => "发现新版本 v$remoteVer"]); else echo json_encode(['status' => 'latest', 'msg' => '已是最新']); } exit;
-    }
-    
-    if ($action === 'do_update') {
-        $c = @file_get_contents($repoUrl . 'lite.php'); $log = ""; $ok = true;
-        if ($c) { if(file_put_contents(__FILE__, $c)) $log.="✅ 单文件核心(lite.php)自我更新成功\n"; else { $ok=false; $log.="❌ 覆盖核心失败，请检查文件写入权限\n"; } } else { $ok=false; $log.="❌ 无法拉取 lite.php 源码\n"; }
-        $sc = @file_get_contents($repoUrl . 'config_sample.php');
-        if ($sc) { file_put_contents('ctmp.php', $sc); $tpl=include('ctmp.php'); $old=include('config.php'); @unlink('ctmp.php'); $new = array_replace_recursive($tpl, $old); $ver = trim(@file_get_contents($repoUrl . 'version.txt')); if($ver) $new['site']['ver'] = $ver; saveConfig($new); $log.="✅ 配置文件架构已同步升级\n"; }
-        echo json_encode(['status' => $ok?'ok':'err', 'log' => $log]); exit;
-    }
+    if ($action === 'check_update') { $remoteVer = @file_get_contents($repoUrl . 'version.txt'); if ($remoteVer === false) echo json_encode(['status' => 'err', 'msg' => '连接 GitHub 失败']); else { $remoteVer = trim($remoteVer); $currentVer = $config['site']['ver']; if (version_compare($remoteVer, $currentVer, '>')) echo json_encode(['status' => 'new', 'ver' => $remoteVer, 'msg' => "发现新版本 v$remoteVer"]); else echo json_encode(['status' => 'latest', 'msg' => '已是最新']); } exit; }
+    if ($action === 'do_update') { $c = @file_get_contents($repoUrl . 'lite.php'); $log = ""; $ok = true; if ($c) { if(file_put_contents(__FILE__, $c)) $log.="✅ 单文件核心(lite.php)自我更新成功\n"; else { $ok=false; $log.="❌ 覆盖核心失败，请检查文件写入权限\n"; } } else { $ok=false; $log.="❌ 无法拉取 lite.php 源码\n"; } $sc = @file_get_contents($repoUrl . 'config_sample.php'); if ($sc) { file_put_contents('ctmp.php', $sc); $tpl=include('ctmp.php'); $old=include('config.php'); @unlink('ctmp.php'); $new = array_replace_recursive($tpl, $old); $ver = trim(@file_get_contents($repoUrl . 'version.txt')); if($ver) $new['site']['ver'] = $ver; saveConfig($new); $log.="✅ 配置文件架构已同步升级\n"; } echo json_encode(['status' => $ok?'ok':'err', 'log' => $log]); exit; }
 
     if ($action === 'del_user') { $id = (int)$_GET['id']; if ($pdo && $id > 0) { $pdo->prepare("DELETE FROM authme WHERE id=?")->execute([$id]); } header("Location: ?a=admin&tab=users&msg=del_ok"); exit; }
     if ($action === 'edit_user_pass') { $id = (int)$_POST['id']; $newPass = $_POST['new_pass']; if ($pdo && !empty($newPass) && $id > 0) { $pdo->prepare("UPDATE authme SET password=? WHERE id=?")->execute([hashAuthMe($newPass), $id]); } header("Location: ?a=admin&tab=users&msg=pass_ok"); exit; }
@@ -131,13 +115,12 @@ if ($isAdminRoute) {
         $new['db']['host']=$_POST['db_host']; $new['db']['name']=$_POST['db_name']; $new['db']['user']=$_POST['db_user']; if(!empty($_POST['db_pass'])) $new['db']['pass']=$_POST['db_pass'];
         $new['smtp']['host']=$_POST['smtp_host']; $new['smtp']['port']=$_POST['smtp_port']; $new['smtp']['user']=$_POST['smtp_user']; $new['smtp']['from_name']=$_POST['smtp_from']; if(!empty($_POST['smtp_pass'])) $new['smtp']['pass']=$_POST['smtp_pass']; if(isset($_POST['smtp_secure'])) $new['smtp']['secure']=$_POST['smtp_secure'];
         $new['admin']['user']=$_POST['admin_user']; if(!empty($_POST['admin_pass'])) $new['admin']['pass']=$_POST['admin_pass']; if(isset($_POST['admin_email'])) $new['admin']['email']=$_POST['admin_email'];
-        unset($new['rcon']); unset($new['server']); unset($new['api']); // 清除老版本冗余
+        unset($new['rcon']); unset($new['server']); unset($new['api']); 
         saveConfig($new); header("Location: ?a=admin&tab=settings&msg=save_ok"); exit;
     }
     if ($action === 'add_cdk') { $d=getCdks(); $d[$_POST['code']]=['cmd'=>$_POST['cmd'],'max'=>(int)$_POST['usage'],'server_id'=>$_POST['server_id'],'used'=>0,'users'=>[]]; saveCdks($d); header("Location: ?a=admin&tab=cdk"); exit; }
     if ($action === 'del_cdk') { $d=getCdks(); unset($d[$_GET['code']]); saveCdks($d); header("Location: ?a=admin&tab=cdk"); exit; }
 
-    // --- 后台 UI 输出 ---
     $tab = $_GET['tab'] ?? 'users';
     ?>
     <!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width"><title>单文件后台 v<?= htmlspecialchars($config['site']['ver']) ?></title><script src="https://cdn.tailwindcss.com"></script><style>body{background:#f3f4f6} .input{width:100%;padding:0.5rem;border:1px solid #ddd;border-radius:0.3rem} .nav-btn{display:block;padding:0.6rem 1rem;margin-bottom:0.5rem;border-radius:0.5rem;font-weight:600;color:#4b5563} .nav-btn.active{background:#eff6ff;color:#2563eb}</style></head>
@@ -222,11 +205,24 @@ if ($isAdminRoute) {
     // ==========================================
     // 3B. 前台路由引擎 (Official & Auth Modules)
     // ==========================================
-    $host = $_SERVER['HTTP_HOST'] ?? '';
+    $host = strtolower(explode(':', $_SERVER['HTTP_HOST'] ?? '')[0]);
     $mode = $config['route']['default'] ?? 'official';
 
-    if (isset($_GET['m'])) { if ($_GET['m'] === 'official') $mode = 'official'; if ($_GET['m'] === 'auth') $mode = 'auth'; } 
-    else { if (!empty($config['route']['domain_official']) && strpos($host, $config['route']['domain_official']) !== false) $mode = 'official'; elseif (!empty($config['route']['domain_auth']) && strpos($host, $config['route']['domain_auth']) !== false) $mode = 'auth'; }
+    // 剥离 http:// 和 www. 以获得干净的匹配源
+    $d_off = strtolower(preg_replace('#^https?://#', '', trim($config['route']['domain_official'] ?? '')));
+    $d_off = preg_replace('#^www\.#', '', explode('/', $d_off)[0]);
+    
+    $d_auth = strtolower(preg_replace('#^https?://#', '', trim($config['route']['domain_auth'] ?? '')));
+    $d_auth = preg_replace('#^www\.#', '', explode('/', $d_auth)[0]);
+
+    if (isset($_GET['m'])) {
+        if ($_GET['m'] === 'official') $mode = 'official';
+        if ($_GET['m'] === 'auth') $mode = 'auth';
+    } else {
+        // 精准拦截：无论是根域还是带 www. 的域，全部正确分发
+        if (!empty($d_auth) && ($host === $d_auth || $host === "www.$d_auth")) $mode = 'auth';
+        elseif (!empty($d_off) && ($host === $d_off || $host === "www.$d_off")) $mode = 'official';
+    }
 
     if ($mode === 'official' && empty($config['modules']['official'])) $mode = 'auth';
     if ($mode === 'auth' && empty($config['modules']['auth'])) $mode = 'official';
@@ -255,7 +251,6 @@ if ($isAdminRoute) {
     ?>
     <!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title><?= htmlspecialchars($config['site']['title']) ?> - 流星通行证</title><script src="https://cdn.tailwindcss.com"></script><style>body { background: url('<?= $config['site']['bg'] ?: "https://images.unsplash.com/photo-1607988795691-3d0147b43231?q=80&w=1920" ?>') no-repeat center center fixed; background-size: cover; } .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border-radius: 1rem; box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37); border: 1px solid rgba(255,255,255,0.5); } .input { width: 100%; padding: 0.7rem; border: 1px solid #e2e8f0; border-radius: 0.5rem; background: rgba(255,255,255,0.8); outline: none; transition: 0.2s; } .input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); } .btn-primary { background: #2563eb; color: white; font-weight: bold; padding: 0.75rem; border-radius: 0.5rem; width: 100%; transition: transform 0.1s; } .btn-primary:active { transform: scale(0.98); } .hidden { display: none; } .fade-in { animation: fadeIn 0.3s ease-in; } @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }</style></head>
     <body class="flex items-center justify-center min-h-screen p-4 text-gray-800">
-
         <?php if (!empty($config['modules']['official'])): ?>
             <a href="?m=official" class="fixed top-5 right-5 bg-white/80 backdrop-blur px-4 py-2 rounded-full shadow font-bold text-sm text-gray-700 hover:bg-white transition z-50">🏠 返回官网</a>
         <?php endif; ?>
@@ -282,7 +277,6 @@ if ($isAdminRoute) {
         function sign(b){ b.disabled=true; b.innerText='...'; fetch('?m=auth&action=do_sign').then(r=>r.json()).then(d=>{ alert(d.m); if(d.s) { b.innerText='✅ 已签到'; b.className='w-full mb-6 py-3 rounded-xl font-bold shadow transition border bg-gray-100 text-gray-400 cursor-not-allowed'; } else b.disabled=false; }); }
         function cdk(){ let c=document.getElementById('cdk').value; let s=document.getElementById('sel_srv').value; if(!c)return; fetch('?m=auth&action=do_cdk',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:`code=${c}&server_id=${s}`}).then(r=>r.json()).then(d=>{ alert(d.m); if(d.s)document.getElementById('cdk').value=''; }); }
         </script>
-
         <?php else: ?>
         <div class="glass-card w-full max-w-sm p-8 text-center relative fade-in">
             <h1 class="text-3xl font-extrabold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-cyan-600 pb-1"><?= htmlspecialchars($config['site']['title']) ?></h1>
