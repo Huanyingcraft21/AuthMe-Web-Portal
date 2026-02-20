@@ -1,7 +1,7 @@
 <?php
 /**
  * Project: Meteor Nexus (流星枢纽)
- * Version: v2.1.3 (Root & WWW Sync Edition)
+ * Version: v2.1.3 (Root & WWW Sync + Status Restored Edition)
  */
 session_start();
 header('Content-Type: text/html; charset=utf-8');
@@ -15,7 +15,6 @@ if (basename($_SERVER['PHP_SELF']) == 'config.php' || defined('IN_ADMIN')) retur
 $host = strtolower(explode(':', $_SERVER['HTTP_HOST'] ?? '')[0]);
 $mode = $config['route']['default'] ?? 'official';
 
-// 自动清洗 URL，剥离 http://、路径以及开头的 www.
 $d_off = strtolower(preg_replace('#^https?://#', '', trim($config['route']['domain_official'] ?? '')));
 $d_off = preg_replace('#^www\.#', '', explode('/', $d_off)[0]);
 
@@ -26,7 +25,6 @@ if (isset($_GET['m'])) {
     if ($_GET['m'] === 'official') $mode = 'official';
     if ($_GET['m'] === 'auth') $mode = 'auth';
 } else {
-    // 精准拦截：只要匹配到根域或 www 域，统统拿下
     if (!empty($d_auth) && ($host === $d_auth || $host === "www.$d_auth")) $mode = 'auth';
     elseif (!empty($d_off) && ($host === $d_off || $host === "www.$d_off")) $mode = 'official';
 }
@@ -199,6 +197,25 @@ if ($A === 'captcha') {
     <?php else: ?>
     <div class="glass-card w-full max-w-sm p-8 text-center relative fade-in">
         <h1 class="text-3xl font-extrabold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-cyan-600 pb-1"><?= htmlspecialchars($config['site']['title']) ?></h1>
+        
+        <?php if(!empty($config['display']['ip'])): ?>
+        <div id="status" class="hidden bg-white/60 p-2 rounded-lg mb-6 flex items-center gap-3 border border-white/50 text-left">
+            <img id="icon" src="" class="w-10 h-10 rounded bg-gray-200">
+            <div class="flex-1 min-w-0">
+                <div id="motd" class="text-xs text-gray-500 truncate">Loading...</div>
+                <div id="online" class="text-sm font-bold text-green-600">Connecting...</div>
+            </div>
+        </div>
+        <script>
+            fetch('https://api.mcsrvstat.us/2/<?= $config['display']['ip'] ?>:<?= $config['display']['port'] ?>').then(r=>r.json()).then(d=>{
+                document.getElementById('status').classList.remove('hidden');
+                document.getElementById('icon').src = d.icon || `https://api.mcsrvstat.us/icon/<?= $config['display']['ip'] ?>`;
+                document.getElementById('online').innerText = d.online ? `🟢 ${d.players.online} 人在线` : '🔴 服务器离线';
+                if(d.online) document.getElementById('motd').innerText = d.motd.clean.join(' ');
+            });
+        </script>
+        <?php endif; ?>
+
         <div id="box-reg">
             <h2 class="text-xl font-bold text-gray-700 mb-4">通行证注册</h2>
             <form action="?m=auth&action=do_reg" method="POST" class="space-y-3">
