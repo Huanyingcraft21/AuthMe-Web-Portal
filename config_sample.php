@@ -1,20 +1,60 @@
 <?php
+/**
+ * Project: 流星MCS 配置文件蓝图
+ * Note: 此文件用于后台在线更新时，自动补全缺失的新版本配置节点。
+ * Version: v1.9 (MetorCore API Edition)
+ */
 return [
-    'db' => ['host'=>'127.0.0.1', 'name'=>'authme', 'user'=>'root', 'pass'=>''],
-    'smtp' => ['host'=>'smtp.qq.com', 'port'=>465, 'user'=>'', 'pass'=>'', 'secure'=>'ssl', 'from_name'=>'流星MCS'],
-    'admin' => ['user'=>'admin', 'pass'=>'password123', 'email'=>''],
+    'db' => [
+        'host' => '127.0.0.1', 
+        'name' => 'authme', 
+        'user' => 'root', 
+        'pass' => ''
+    ],
+    'smtp' => [
+        'host' => 'smtp.qq.com', 
+        'port' => 465, 
+        'user' => '', 
+        'pass' => '', 
+        'secure' => 'ssl', 
+        'from_name' => '流星MCS'
+    ],
+    'admin' => [
+        'user' => 'admin', 
+        'pass' => 'password123', 
+        'email' => ''
+    ],
     'site' => [
         'title' => '流星MCS', 
-        'ver'   => '1.8-Patched', // 这里现在支持任意格式，如 '1.8.1' 或 '2.0-beta'
-        'bg'    => 'https://images.unsplash.com/photo-1607988795691-3d0147b43231?q=80&w=1920'
+        'ver' => '1.9', 
+        'bg' => ''
     ],
-    'display' => ['ip'=>'127.0.0.1', 'port'=>'25565'], 
+    'display' => [
+        'ip' => '', 
+        'port' => '25565'
+    ], 
     'servers' => [
-        ['name'=>'默认服务器', 'ip'=>'127.0.0.1', 'port'=>'25565', 'rcon_port'=>'25575', 'rcon_pass'=>'']
+        [
+            'name' => '默认服务器', 
+            'ip' => '127.0.0.1', 
+            'port' => 25565, 
+            'api_port' => 8080, 
+            'api_key' => ''
+        ]
     ],
     'rewards' => [
         'reg_cmd' => '', 
-        'daily_cmd' => '', 
+        'daily_cmd' => '',
         'sign_in_servers' => [0]
+    ],
+    // 兼容单服模式的备用选项
+    'server' => [
+        'ip' => '', 
+        'port' => '25565'
+    ],
+    'api' => [
+        'host' => '127.0.0.1', 
+        'port' => 8080, 
+        'key' => ''
     ]
 ];
