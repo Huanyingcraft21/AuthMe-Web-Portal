@@ -1,7 +1,7 @@
 <?php
 /**
  * Project: Meteor Nexus (流星枢纽) Core
- * Version: v2.0.1 (Mounting Engine Edition)
+ * Version: v2.1.5 (MeteorCore API Fix)
  */
 error_reporting(0);
 $configFile = 'config.php';
@@ -13,12 +13,11 @@ if (file_exists($configFile)) {
         'db' => ['host'=>'127.0.0.1', 'name'=>'authme', 'user'=>'root', 'pass'=>''],
         'smtp' => ['host'=>'smtp.qq.com', 'port'=>465, 'user'=>'', 'pass'=>'', 'secure'=>'ssl', 'from_name'=>'流星网'],
         'admin' => ['user'=>'admin', 'pass'=>'password123', 'email'=>''],
-        'site' => ['title'=>'Meteor Nexus', 'ver'=>'2.0.1', 'bg'=>''],
+        'site' => ['title'=>'Meteor Nexus', 'ver'=>'2.1.5', 'bg'=>''],
         'display' => ['ip'=>'', 'port'=>'25565'], 
         'servers' => [['name'=>'默认服务器', 'ip'=>'127.0.0.1', 'port'=>25565, 'api_port'=>8080, 'api_key'=>'']],
         'rewards' => ['reg_cmd'=>'', 'daily_cmd'=>''],
         'modules' => ['official' => 1, 'auth' => 1],
-        // [v2.0.1 新增] 官网挂载类型与目标地址
         'route' => ['default' => 'official', 'domain_official' => '', 'domain_auth' => '', 'official_type' => 'local', 'official_url' => '']
     ];
     $loaded = include($configFile);
@@ -42,16 +41,38 @@ function saveConfig($newConfig) { global $configFile; return file_put_contents($
 function hashAuthMe($p) { $s = bin2hex(random_bytes(8)); return "\$SHA\$" . $s . "\$" . hash('sha256', hash('sha256', $p) . $s); }
 function verifyAuthMe($p, $hash) { $parts=explode('$', $hash); if(count($parts)===4&&$parts[1]==='SHA') return hash('sha256',hash('sha256',$p).$parts[2])===$parts[3]; return false; }
 
+// ==========================================
+// 🔥 修复版: 完全按照你提供的正确逻辑编写的 HTTP 通讯
+// ==========================================
 function runApiCmd($cmd, $serverIdx = 0) {
-    global $config; if (!isset($config['servers'][$serverIdx])) return false;
-    $s = $config['servers'][$serverIdx]; if (empty($s['api_key']) || empty($cmd)) return false;
-    $port = $s['api_port'] ?? 8080; $url = "http://{$s['ip']}:{$port}/api/execute";
-    $ch = curl_init($url); $payload = json_encode(['action' => 'command', 'command' => $cmd]);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); curl_setopt($ch, CURLOPT_POST, true); curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'Authorization: Bearer ' . $s['api_key'], 'X-MetorCore-Key: ' . $s['api_key'], 'User-Agent: MeteorNexus/2.0.1']);
+    global $config; 
+    if (!isset($config['servers'][$serverIdx])) return false;
+    $s = $config['servers'][$serverIdx]; 
+    if (empty($s['api_key']) || empty($cmd)) return false;
+    
+    $port = $s['api_port'] ?? 8080; 
+    
+    // 1. 使用 urlencode() 安全包装指令 (包含中文与空格处理)
+    $safe_command = urlencode($cmd);
+    // 2. 采用 GET 格式直接拼接 URL
+    $url = "http://{$s['ip']}:{$port}/api/cmd?cmd={$safe_command}";
+    
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    // 3. 发送高强度鉴权请求 (严格按照你的格式)
+    curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+        'Authorization: ' . $s['api_key']
+    ));
     curl_setopt($ch, CURLOPT_TIMEOUT, 3);
-    $response = curl_exec($ch); $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-    if ($httpCode === 200) { $data = json_decode($response, true); return $data['result'] ?? "指令执行成功"; } return false;
+    
+    $response = curl_exec($ch);
+    curl_close($ch);
+    
+    if ($response !== false) { 
+        return $response ?: "指令执行成功"; 
+    } 
+    return false;
 }
 
 class TinySMTP {
